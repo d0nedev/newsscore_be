@@ -43,6 +43,27 @@ type MatchStatistic struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type News struct {
+	ID          pgtype.UUID
+	Slug        string
+	Category    string
+	Title       string
+	Summary     string
+	Body        string
+	ImageUrl    pgtype.Text
+	AuthorID    pgtype.UUID
+	PublishedAt pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type NewsLink struct {
+	NewsID   pgtype.UUID
+	MatchID  pgtype.UUID
+	TeamID   pgtype.UUID
+	PlayerID pgtype.UUID
+}
+
 type Player struct {
 	ID           pgtype.UUID
 	FlashscoreID string

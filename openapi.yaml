@@ -15,6 +15,8 @@ servers:
 tags:
   - name: auth
     description: "Login with an HttpOnly session cookie (`session`). Browsers must send `credentials: include`."
+  - name: news
+    description: Berita. `/admin/news` needs a session with the admin role.
   - name: matches
     description: Pertandingan sepak bola. Tanggal dalam zona WIB.
   - name: health
@@ -93,6 +95,158 @@ paths:
                   data: { $ref: "#/components/schemas/User" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/news:
+    get:
+      tags: [news]
+      operationId: listNews
+      summary: Published news, newest first
+      parameters:
+        - { name: matchId, in: query, schema: { type: string, format: uuid } }
+        - { name: teamId, in: query, schema: { type: string, format: uuid } }
+        - { name: playerId, in: query, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: cursor, in: query, description: "`meta.nextCursor` from the previous page", schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/NewsItem" } }
+                  meta:
+                    type: object
+                    required: [nextCursor]
+                    properties:
+                      nextCursor: { type: [string, "null"] }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/news/{slug}:
+    get:
+      tags: [news]
+      operationId: getNews
+      summary: One published article with its body
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: "#/components/schemas/NewsItem"
+                      - type: object
+                        required: [body]
+                        properties:
+                          body: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/admin/news:
+    get:
+      tags: [news]
+      operationId: adminListNews
+      summary: Latest 100 articles, drafts included
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/AdminNews" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [news]
+      operationId: adminCreateNews
+      summary: Create an article (draft unless `published`)
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewsWrite" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/AdminNews" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/SlugTaken" }
+
+  /api/v1/admin/news/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [news]
+      operationId: adminGetNews
+      summary: One article with body and links, draft or not
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/AdminNews" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [news]
+      operationId: adminUpdateNews
+      summary: Replace fields and links; `published` keeps the first publish time
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewsWrite" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/AdminNews" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/SlugTaken" }
+    delete:
+      tags: [news]
+      operationId: adminDeleteNews
+      summary: Delete an article and its links
+      security: [{ sessionCookie: [] }]
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/matches:
     get:
@@ -205,6 +359,53 @@ components:
       description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
+    NewsItem:
+      type: object
+      required: [id, category, title, summary, published, publishedAt]
+      properties:
+        id: { type: string, description: Slug }
+        category: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        image: { type: string, format: uri }
+        published: { type: string, description: 'Relative label: "baru saja", "2 jam lalu", or DD.MM.YYYY' }
+        publishedAt: { type: string, format: date-time }
+
+    NewsLinks:
+      type: object
+      properties:
+        matchIds: { type: array, items: { type: string, format: uuid } }
+        teamIds: { type: array, items: { type: string, format: uuid } }
+        playerIds: { type: array, items: { type: string, format: uuid } }
+
+    NewsWrite:
+      type: object
+      required: [title, category]
+      properties:
+        slug: { type: string, description: Derived from the title when empty }
+        title: { type: string, maxLength: 200 }
+        category: { type: string, maxLength: 40 }
+        summary: { type: string, maxLength: 500 }
+        body: { type: string }
+        image: { type: string, description: https URL }
+        published: { type: boolean, default: false }
+        links: { $ref: "#/components/schemas/NewsLinks" }
+
+    AdminNews:
+      type: object
+      required: [id, slug, category, title, publishedAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        category: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        body: { type: string }
+        image: { type: string }
+        publishedAt: { type: [string, "null"], format: date-time, description: null = draft }
+        updatedAt: { type: string, format: date-time }
+        links: { $ref: "#/components/schemas/NewsLinks" }
+
     User:
       type: object
       required: [id, email, name]
@@ -322,6 +523,16 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Unauthorized:
       description: Not signed in or session expired (`UNAUTHORIZED`)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Signed in without the admin role (`FORBIDDEN`)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    SlugTaken:
+      description: Another article uses this slug (`NEWS_SLUG_TAKEN`)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

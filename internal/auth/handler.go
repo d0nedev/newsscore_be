@@ -120,6 +120,17 @@ func UserFrom(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
+// RequireAdmin is RequireUser plus the admin role.
+func (h *Handler) RequireAdmin(next http.Handler) http.Handler {
+	return h.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, _ := UserFrom(r.Context()); u.Role != "admin" {
+			httpx.WriteError(w, apperror.New(http.StatusForbidden, apperror.CodeForbidden, "admin role required"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
 // RequireUser rejects requests without a valid session cookie.
 func (h *Handler) RequireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

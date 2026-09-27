@@ -6,6 +6,7 @@ import (
 
 	"github.com/d0nedev/newsscore/internal/auth"
 	"github.com/d0nedev/newsscore/internal/match"
+	"github.com/d0nedev/newsscore/internal/news"
 	"github.com/d0nedev/newsscore/internal/platform/config"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/platform/middleware"
@@ -36,11 +37,14 @@ func modules(
 	// ponytail: 10 login attempts per IP per minute, in memory per replica; move to a shared store if replicas multiply.
 	loginLimit := middleware.RateLimit(10)
 
+	newsHandler := news.NewHandler(news.NewService(pool, queries, tp.Tracer("news")))
+
 	matches := match.NewHandler(match.NewService(queries, tp.Tracer("match")))
 	go stream.Listen(ctx, pool, logger, match.NotifyChannel, match.Relay(hub, logger))
 
 	return []func(chi.Router){
 		func(r chi.Router) { match.RegisterRoutes(r, matches, hub, logger) },
 		func(r chi.Router) { auth.RegisterRoutes(r, authHandler, logger, loginLimit) },
+		func(r chi.Router) { news.RegisterRoutes(r, newsHandler, logger, authHandler.RequireAdmin) },
 	}
 }

@@ -1,0 +1,11 @@
+### Public list (filters: matchId, teamId, playerId; paginate with cursor)
+GET http://localhost:8080/api/v1/news?limit=20
+
+### Public detail by slug
+GET http://localhost:8080/api/v1/news/persib-menang-atas-persija
+
+### Admin: create (login as an admin first, see auth.http)
+POST http://localhost:8080/api/v1/admin/news
+Content-Type: application/json
+
+{"title":"Persib Menang atas Persija","category":"Resmi","summary":"Ringkasan.","body":"Isi berita.","published":true,"links":{"matchIds":[],"teamIds":[],"playerIds":[]}}

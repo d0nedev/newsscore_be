@@ -9,6 +9,7 @@ const (
 	CodeNotFound            = "NOT_FOUND"
 	CodeMethodNotAllowed    = "METHOD_NOT_ALLOWED"
 	CodeUnauthorized        = "UNAUTHORIZED"
+	CodeForbidden           = "FORBIDDEN"
 	CodeRateLimited         = "RATE_LIMITED"
 	CodeClientIPUnresolved  = "CLIENT_IP_UNRESOLVED"
 	CodeRequestBodyTooLarge = "REQUEST_BODY_TOO_LARGE"
