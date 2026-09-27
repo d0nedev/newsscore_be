@@ -35,7 +35,7 @@ func (q *Queries) GetTeam(ctx context.Context, id pgtype.UUID) (GetTeamRow, erro
 }
 
 const listTeamRecentMatches = `-- name: ListTeamRecentMatches :many
-SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name FROM match_rows
 WHERE $1::uuid IN (home_team_id, away_team_id) AND status <> 'scheduled'
 ORDER BY match_time DESC
 LIMIT 5
@@ -67,6 +67,9 @@ func (q *Queries) ListTeamRecentMatches(ctx context.Context, teamID pgtype.UUID)
 			&i.AwayName,
 			&i.AwayShortName,
 			&i.AwayLogoUrl,
+			&i.CompetitionID,
+			&i.CompetitionSlug,
+			&i.CompetitionName,
 		); err != nil {
 			return nil, err
 		}
@@ -143,7 +146,7 @@ func (q *Queries) ListTeamSquad(ctx context.Context, arg ListTeamSquadParams) ([
 }
 
 const listTeamUpcomingMatches = `-- name: ListTeamUpcomingMatches :many
-SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name FROM match_rows
 WHERE $1::uuid IN (home_team_id, away_team_id) AND status = 'scheduled'
 ORDER BY match_time
 LIMIT 5
@@ -175,6 +178,9 @@ func (q *Queries) ListTeamUpcomingMatches(ctx context.Context, teamID pgtype.UUI
 			&i.AwayName,
 			&i.AwayShortName,
 			&i.AwayLogoUrl,
+			&i.CompetitionID,
+			&i.CompetitionSlug,
+			&i.CompetitionName,
 		); err != nil {
 			return nil, err
 		}

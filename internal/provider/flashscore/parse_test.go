@@ -93,3 +93,15 @@ func TestParseLineups(t *testing.T) {
 		}
 	}
 }
+
+func TestSeasonPattern(t *testing.T) {
+	for html, want := range map[string]string{
+		`<div class="heading__info">2026/2027</div>`: "2026",
+		`<div class="heading__info">2026</div>`:      "2026",
+	} {
+		got := seasonPattern.FindStringSubmatch(html)
+		if len(got) < 2 || got[1] != want {
+			t.Errorf("%q: got %v, want %s", html, got, want)
+		}
+	}
+}

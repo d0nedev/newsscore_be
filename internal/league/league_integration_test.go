@@ -1,4 +1,4 @@
-package standing
+package league
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Needs a migrated database at TEST_DATABASE_URL; everything runs in a rolled-back transaction.
@@ -36,17 +37,20 @@ func TestIntegrationListStandings(t *testing.T) {
 		  ('00000000-0000-0000-0000-00000000000a', 't-a', 'Alpha', 'ALP'),
 		  ('00000000-0000-0000-0000-00000000000b', 't-b', 'Bravo', 'BRA'),
 		  ('00000000-0000-0000-0000-00000000000c', 't-c', 'Charlie', 'CHA');
-		INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score) VALUES
-		  ('m1', 1999, '00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b', 'finished', '1999-08-01', 2, 0),
-		  ('m2', 1999, '00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-00000000000a', 'finished', '1999-08-08', 1, 1),
-		  ('m3', 1999, '00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-00000000000c', 'finished', '1999-08-15', 3, 1),
-		  ('m4', 1999, '00000000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-00000000000a', 'scheduled', '1999-08-22', NULL, NULL),
-		  ('m5', 1998, '00000000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-00000000000a', 'finished', '1998-08-22', 9, 0)`)
+		INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score) VALUES
+		  ('m1', (SELECT id FROM competitions WHERE slug = 'super-league'), 1999, '00000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-00000000000b', 'finished', '1999-08-01', 2, 0),
+		  ('m2', (SELECT id FROM competitions WHERE slug = 'super-league'), 1999, '00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-00000000000a', 'finished', '1999-08-08', 1, 1),
+		  ('m3', (SELECT id FROM competitions WHERE slug = 'super-league'), 1999, '00000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-00000000000c', 'finished', '1999-08-15', 3, 1),
+		  ('m4', (SELECT id FROM competitions WHERE slug = 'super-league'), 1999, '00000000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-00000000000a', 'scheduled', '1999-08-22', NULL, NULL),
+		  ('m5', (SELECT id FROM competitions WHERE slug = 'super-league'), 1998, '00000000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-00000000000a', 'finished', '1998-08-22', 9, 0)`)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	rows, err := db.New(tx).ListStandings(ctx, 1999)
+	rows, err := db.New(tx).ListStandings(ctx, db.ListStandingsParams{
+		CompetitionID: superLeague(t, ctx, tx),
+		Season:        1999,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,4 +76,13 @@ func TestIntegrationListStandings(t *testing.T) {
 			t.Errorf("row %d = %+v, want %+v", i+1, g, w)
 		}
 	}
+}
+
+func superLeague(t *testing.T, ctx context.Context, tx pgx.Tx) pgtype.UUID {
+	t.Helper()
+	var id pgtype.UUID
+	if err := tx.QueryRow(ctx, "SELECT id FROM competitions WHERE slug = 'super-league'").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

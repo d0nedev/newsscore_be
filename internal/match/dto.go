@@ -21,6 +21,7 @@ type listFilter struct {
 	From   time.Time
 	TeamID *uuid.UUID
 	Status string
+	League string // competition slug
 }
 
 func parseListFilter(q url.Values) (listFilter, error) {
@@ -46,6 +47,8 @@ func parseListFilter(q url.Values) (listFilter, error) {
 		f.TeamID = &id
 	}
 
+	f.League = q.Get("leagueId")
+
 	if v := q.Get("status"); v != "" {
 		if !validStatuses[v] {
 			return f, apperror.Validation("status must be scheduled, live, or finished")
@@ -64,13 +67,15 @@ type TeamResponse struct {
 }
 
 type MatchResponse struct {
-	ID     string       `json:"id"`
-	Status string       `json:"status"`
-	Time   string       `json:"time"`
-	Date   string       `json:"date"`
-	Home   TeamResponse `json:"home"`
-	Away   TeamResponse `json:"away"`
-	Score  *[2]int      `json:"score"`
+	ID       string       `json:"id"`
+	LeagueID string       `json:"leagueId"` // competition slug
+	League   string       `json:"league"`
+	Status   string       `json:"status"`
+	Time     string       `json:"time"`
+	Date     string       `json:"date"`
+	Home     TeamResponse `json:"home"`
+	Away     TeamResponse `json:"away"`
+	Score    *[2]int      `json:"score"`
 }
 
 type EventResponse struct {
@@ -114,12 +119,14 @@ func ToMatchResponse(m db.MatchRow) MatchResponse {
 	kickoff := m.MatchTime.Time.In(domain.WIB)
 
 	resp := MatchResponse{
-		ID:     m.ID.String(),
-		Status: m.Status,
-		Time:   kickoff.Format("15:04"),
-		Date:   kickoff.Format(domain.DateLayout),
-		Home:   TeamResponse{ID: m.HomeTeamID.String(), Name: m.HomeName, Badge: m.HomeShortName, Logo: m.HomeLogoUrl.String},
-		Away:   TeamResponse{ID: m.AwayTeamID.String(), Name: m.AwayName, Badge: m.AwayShortName, Logo: m.AwayLogoUrl.String},
+		ID:       m.ID.String(),
+		LeagueID: m.CompetitionSlug,
+		League:   m.CompetitionName,
+		Status:   m.Status,
+		Time:     kickoff.Format("15:04"),
+		Date:     kickoff.Format(domain.DateLayout),
+		Home:     TeamResponse{ID: m.HomeTeamID.String(), Name: m.HomeName, Badge: m.HomeShortName, Logo: m.HomeLogoUrl.String},
+		Away:     TeamResponse{ID: m.AwayTeamID.String(), Name: m.AwayName, Badge: m.AwayShortName, Logo: m.AwayLogoUrl.String},
 	}
 	if m.Status == "live" {
 		resp.Time = liveMinute(m.Stage, m.StageStartedAt, time.Now())

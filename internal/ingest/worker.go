@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
@@ -31,19 +32,30 @@ func (w *Worker) Sync(ctx context.Context) error {
 		w.logger.Info("expired sessions deleted", slog.Int64("count", n))
 	}
 
-	if err := w.syncLeague(ctx); err != nil {
-		return err
+	competitions, err := w.db.ListActiveCompetitions(ctx)
+	if err != nil {
+		return fmt.Errorf("list competitions: %w", err)
+	}
+	// One failing page (layout change, block) must not stop the other competitions.
+	for _, c := range competitions {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := w.syncCompetition(ctx, c); err != nil {
+			w.logger.Error("sync competition failed", slog.String("competition", c.Slug), slog.Any("error", err))
+		}
+		time.Sleep(time.Second) // same politeness gap as the feed requests
 	}
 	return w.syncDetails(ctx)
 }
 
-func (w *Worker) syncLeague(ctx context.Context) error {
-	matches, teams, err := flashscore.ScrapeLeague()
+func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetitionsRow) error {
+	matches, teams, err := flashscore.ScrapeLeague(c.FlashscorePath)
 	if err != nil {
-		return fmt.Errorf("scrape league: %w", err)
+		return fmt.Errorf("scrape %s: %w", c.FlashscorePath, err)
 	}
 
-	w.logger.Info("league scraped", slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
+	w.logger.Info("competition scraped", slog.String("competition", c.Slug), slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
 
 	teamIDs := make(map[string]pgtype.UUID, len(teams))
 	for _, t := range teams {
@@ -70,6 +82,7 @@ func (w *Worker) syncLeague(ctx context.Context) error {
 
 		_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
 			FlashscoreID:   m.FlashscoreID,
+			CompetitionID:  c.ID,
 			Season:         int16(m.Season),
 			HomeTeamID:     homeID,
 			AwayTeamID:     awayID,

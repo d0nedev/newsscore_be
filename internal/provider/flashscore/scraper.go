@@ -15,16 +15,21 @@ import (
 // client bounds every Flashscore call so a hung connection cannot stall the ingestor.
 var client = &http.Client{Timeout: 30 * time.Second}
 
-const leagueURL = "https://www.flashscore.com/football/indonesia/super-league/"
+const baseURL = "https://www.flashscore.com"
+
+// seasonPattern reads the season from the page heading, "2026/2027" or "2026".
+// The <title> is not reliable: the Super League page says "Super League Indonesia".
+var seasonPattern = regexp.MustCompile(`heading__info">(\d{4})(?:/\d{4})?<`)
 
 var feedPatterns = map[string]*regexp.Regexp{
 	"fixtures": regexp.MustCompile("cjs\\.initialFeeds\\['fixtures'\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
 	"results":  regexp.MustCompile("cjs\\.initialFeeds\\['results'\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
 }
 
-// ScrapeLeague reads fixtures (scheduled and live) and results from one page load.
-func ScrapeLeague() ([]domain.Match, []domain.Team, error) {
-	req, err := http.NewRequest("GET", leagueURL, nil)
+// ScrapeLeague reads fixtures (scheduled and live) and results of one competition
+// page, e.g. path "/football/indonesia/super-league/", from one page load.
+func ScrapeLeague(path string) ([]domain.Match, []domain.Team, error) {
+	req, err := http.NewRequest("GET", baseURL+path, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -46,6 +51,12 @@ func ScrapeLeague() ([]domain.Match, []domain.Team, error) {
 	}
 	html := string(body)
 
+	found := seasonPattern.FindStringSubmatch(html)
+	if len(found) < 2 {
+		return nil, nil, fmt.Errorf("season not found in page heading")
+	}
+	season, _ := strconv.Atoi(found[1])
+
 	teamsMap := make(map[string]domain.Team)
 	var matches []domain.Match
 
@@ -60,6 +71,7 @@ func ScrapeLeague() ([]domain.Match, []domain.Team, error) {
 			if !ok {
 				continue
 			}
+			match.Season = season
 			teamsMap[home.FlashscoreID] = home
 			teamsMap[away.FlashscoreID] = away
 			matches = append(matches, match)
@@ -100,7 +112,6 @@ func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bo
 
 	return domain.Match{
 		FlashscoreID:         id,
-		Season:               2026, // hardcoded for MVP
 		HomeTeamFlashscoreID: home.FlashscoreID,
 		AwayTeamFlashscoreID: away.FlashscoreID,
 		Status:               status(m["AB"]),

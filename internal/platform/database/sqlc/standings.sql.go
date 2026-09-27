@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getCompetition = `-- name: GetCompetition :one
+SELECT c.id, c.slug, c.name, c.country, c.type,
+       coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
+FROM competitions c
+WHERE c.slug = $1
+`
+
+type GetCompetitionRow struct {
+	ID      pgtype.UUID
+	Slug    string
+	Name    string
+	Country string
+	Type    string
+	Season  int16
+}
+
+func (q *Queries) GetCompetition(ctx context.Context, slug string) (GetCompetitionRow, error) {
+	row := q.db.QueryRow(ctx, getCompetition, slug)
+	var i GetCompetitionRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Country,
+		&i.Type,
+		&i.Season,
+	)
+	return i, err
+}
+
 const latestSeason = `-- name: LatestSeason :one
 SELECT coalesce(max(season), 0)::smallint FROM matches
 `
@@ -22,18 +52,63 @@ func (q *Queries) LatestSeason(ctx context.Context) (int16, error) {
 	return column_1, err
 }
 
+const listCompetitions = `-- name: ListCompetitions :many
+SELECT c.id, c.slug, c.name, c.country, c.type,
+       coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
+FROM competitions c
+WHERE c.active
+ORDER BY c.sort_order
+`
+
+type ListCompetitionsRow struct {
+	ID      pgtype.UUID
+	Slug    string
+	Name    string
+	Country string
+	Type    string
+	Season  int16
+}
+
+// Each competition with its latest season (0 until the ingestor has stored a match).
+func (q *Queries) ListCompetitions(ctx context.Context) ([]ListCompetitionsRow, error) {
+	rows, err := q.db.Query(ctx, listCompetitions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCompetitionsRow
+	for rows.Next() {
+		var i ListCompetitionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Country,
+			&i.Type,
+			&i.Season,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStandings = `-- name: ListStandings :many
 WITH season_teams AS (
-    SELECT home_team_id AS team_id FROM matches WHERE season = $1::smallint
+    SELECT home_team_id AS team_id FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint
     UNION
-    SELECT away_team_id FROM matches WHERE season = $1::smallint
+    SELECT away_team_id FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint
 ),
 results AS (
     SELECT home_team_id AS team_id, home_score AS gf, away_score AS ga, match_time
-    FROM matches WHERE season = $1::smallint AND status = 'finished'
+    FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND status = 'finished'
     UNION ALL
     SELECT away_team_id, away_score, home_score, match_time
-    FROM matches WHERE season = $1::smallint AND status = 'finished'
+    FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND status = 'finished'
 ),
 totals AS (
     SELECT st.team_id,
@@ -59,6 +134,11 @@ JOIN teams t ON t.id = tt.team_id
 ORDER BY points DESC, tt.goals_for - tt.goals_against DESC, tt.goals_for DESC, t.name
 `
 
+type ListStandingsParams struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+}
+
 type ListStandingsRow struct {
 	ID           pgtype.UUID
 	Name         string
@@ -76,8 +156,8 @@ type ListStandingsRow struct {
 
 // Every team with a match in the season, ranked by points, goal difference, goals scored.
 // ponytail: Liga 1 breaks ties head-to-head first; add that if two teams ever tie on points at season end.
-func (q *Queries) ListStandings(ctx context.Context, season int16) ([]ListStandingsRow, error) {
-	rows, err := q.db.Query(ctx, listStandings, season)
+func (q *Queries) ListStandings(ctx context.Context, arg ListStandingsParams) ([]ListStandingsRow, error) {
+	rows, err := q.db.Query(ctx, listStandings, arg.CompetitionID, arg.Season)
 	if err != nil {
 		return nil, err
 	}

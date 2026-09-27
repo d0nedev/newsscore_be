@@ -3,7 +3,8 @@ SELECT * FROM match_rows
 WHERE match_time >= sqlc.arg(from_time) AND match_time < sqlc.arg(to_time)
   AND (sqlc.narg(team_id)::uuid IS NULL OR sqlc.narg(team_id)::uuid IN (home_team_id, away_team_id))
   AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
-ORDER BY match_time, id;
+  AND (sqlc.narg(competition)::text IS NULL OR competition_slug = sqlc.narg(competition)::text)
+ORDER BY competition_sort, match_time, id;
 
 -- name: GetMatch :one
 SELECT * FROM match_rows WHERE id = $1;

@@ -17,8 +17,8 @@ tags:
     description: "Login with an HttpOnly session cookie (`session`). Browsers must send `credentials: include`."
   - name: news
     description: Berita. `/admin/news` needs a session with the admin role.
-  - name: standings
-    description: League table, computed from finished matches.
+  - name: leagues
+    description: Competitions (Super League, Championship, Piala Presiden) and tables computed from finished matches.
   - name: teams
     description: Team and player pages, from lineups and incidents of the latest season.
   - name: search
@@ -254,13 +254,33 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /api/v1/standings:
+  /api/v1/leagues:
     get:
-      tags: [standings]
-      operationId: getStandings
-      summary: League table for a season
-      description: Ranked by points, goal difference, then goals scored. Teams with no finished match yet appear with zeros.
+      tags: [leagues]
+      operationId: listLeagues
+      summary: Competitions with their latest season
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/League" } }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/leagues/{id}:
+    get:
+      tags: [leagues]
+      operationId: getLeague
+      summary: One competition with its table
+      description: |
+        Standings rank by points, goal difference, then goals scored; teams without a
+        finished match appear with zeros. Cups return an empty `standings`.
       parameters:
+        - { name: id, in: path, required: true, description: "Slug, e.g. super-league", schema: { type: string } }
         - { name: season, in: query, description: Year; defaults to the latest season with matches, schema: { type: integer, example: 2026 } }
       responses:
         "200":
@@ -271,13 +291,9 @@ paths:
                 type: object
                 required: [data]
                 properties:
-                  data:
-                    type: object
-                    required: [season, rows]
-                    properties:
-                      season: { type: integer }
-                      rows: { type: array, items: { $ref: "#/components/schemas/StandingRow" } }
+                  data: { $ref: "#/components/schemas/League" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
 
   /api/v1/teams/{id}:
@@ -380,6 +396,7 @@ paths:
       parameters:
         - { name: date, in: query, description: "`DD.MM.YYYY`, default hari ini (WIB)", schema: { type: string, example: "14.09.2026" } }
         - { name: teamId, in: query, schema: { type: string, format: uuid } }
+        - { name: leagueId, in: query, description: Competition slug, schema: { type: string } }
         - { name: status, in: query, schema: { $ref: "#/components/schemas/MatchStatus" } }
       responses:
         "200":
@@ -478,6 +495,17 @@ components:
       name: session
 
   schemas:
+    League:
+      type: object
+      required: [id, name, country, type, season]
+      properties:
+        id: { type: string, description: Slug }
+        name: { type: string }
+        country: { type: string }
+        type: { type: string, enum: [league, cup] }
+        season: { type: integer, description: 0 until a match is stored }
+        standings: { type: array, items: { $ref: "#/components/schemas/StandingRow" }, description: "Only on GET /leagues/{id}" }
+
     TeamProfile:
       type: object
       required: [id, name, badge, season, squad, recentMatches, upcomingMatches]
@@ -649,9 +677,11 @@ components:
 
     Match:
       type: object
-      required: [id, status, time, date, home, away, score]
+      required: [id, leagueId, league, status, time, date, home, away, score]
       properties:
         id: { type: string, format: uuid }
+        leagueId: { type: string, description: Competition slug }
+        league: { type: string }
         status: { $ref: "#/components/schemas/MatchStatus" }
         time: { type: string, description: 'Jam kick-off WIB "HH:MM", atau "LIVE"' }
         date: { type: string, description: '"DD.MM.YYYY" (WIB)' }

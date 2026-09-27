@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listActiveCompetitions = `-- name: ListActiveCompetitions :many
+SELECT id, slug, flashscore_path FROM competitions WHERE active ORDER BY sort_order
+`
+
+type ListActiveCompetitionsRow struct {
+	ID             pgtype.UUID
+	Slug           string
+	FlashscorePath string
+}
+
+func (q *Queries) ListActiveCompetitions(ctx context.Context) ([]ListActiveCompetitionsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveCompetitions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveCompetitionsRow
+	for rows.Next() {
+		var i ListActiveCompetitionsRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.FlashscorePath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveCandidates = `-- name: ListLiveCandidates :many
 SELECT id, flashscore_id, home_team_id, away_team_id
 FROM matches
@@ -80,10 +110,11 @@ func (q *Queries) UpdateMatchLive(ctx context.Context, arg UpdateMatchLiveParams
 }
 
 const upsertMatch = `-- name: UpsertMatch :one
-INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET status = EXCLUDED.status,
+    season = EXCLUDED.season,
     stage = EXCLUDED.stage,
     stage_started_at = EXCLUDED.stage_started_at,
     match_time = EXCLUDED.match_time,
@@ -96,6 +127,7 @@ RETURNING id
 
 type UpsertMatchParams struct {
 	FlashscoreID   string
+	CompetitionID  pgtype.UUID
 	Season         int16
 	HomeTeamID     pgtype.UUID
 	AwayTeamID     pgtype.UUID
@@ -110,6 +142,7 @@ type UpsertMatchParams struct {
 func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertMatch,
 		arg.FlashscoreID,
+		arg.CompetitionID,
 		arg.Season,
 		arg.HomeTeamID,
 		arg.AwayTeamID,

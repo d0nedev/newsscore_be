@@ -34,9 +34,10 @@ func (s *Service) List(ctx context.Context, f listFilter) ([]db.MatchRow, error)
 	defer span.End()
 
 	params := db.ListMatchesParams{
-		FromTime: pgtype.Timestamptz{Time: f.From, Valid: true},
-		ToTime:   pgtype.Timestamptz{Time: f.From.AddDate(0, 0, 1), Valid: true},
-		Status:   pgtype.Text{String: f.Status, Valid: f.Status != ""},
+		FromTime:    pgtype.Timestamptz{Time: f.From, Valid: true},
+		ToTime:      pgtype.Timestamptz{Time: f.From.AddDate(0, 0, 1), Valid: true},
+		Status:      pgtype.Text{String: f.Status, Valid: f.Status != ""},
+		Competition: pgtype.Text{String: f.League, Valid: f.League != ""},
 	}
 	if f.TeamID != nil {
 		params.TeamID = database.UUID(*f.TeamID)

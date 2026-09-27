@@ -9,10 +9,11 @@ SET name = EXCLUDED.name,
 RETURNING id;
 
 -- name: UpsertMatch :one
-INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET status = EXCLUDED.status,
+    season = EXCLUDED.season,
     stage = EXCLUDED.stage,
     stage_started_at = EXCLUDED.stage_started_at,
     match_time = EXCLUDED.match_time,
@@ -35,3 +36,6 @@ UPDATE matches
 SET status = $2, stage = $3, stage_started_at = $4, home_score = $5, away_score = $6,
     data_as_of = now(), updated_at = now()
 WHERE id = $1;
+
+-- name: ListActiveCompetitions :many
+SELECT id, slug, flashscore_path FROM competitions WHERE active ORDER BY sort_order;

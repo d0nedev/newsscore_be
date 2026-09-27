@@ -12,7 +12,7 @@ import (
 )
 
 const getMatch = `-- name: GetMatch :one
-SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows WHERE id = $1
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name FROM match_rows WHERE id = $1
 `
 
 func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (MatchRow, error) {
@@ -35,6 +35,9 @@ func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (MatchRow, error
 		&i.AwayName,
 		&i.AwayShortName,
 		&i.AwayLogoUrl,
+		&i.CompetitionID,
+		&i.CompetitionSlug,
+		&i.CompetitionName,
 	)
 	return i, err
 }
@@ -134,18 +137,20 @@ func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]
 }
 
 const listMatches = `-- name: ListMatches :many
-SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name FROM match_rows
 WHERE match_time >= $1 AND match_time < $2
   AND ($3::uuid IS NULL OR $3::uuid IN (home_team_id, away_team_id))
   AND ($4::text IS NULL OR status = $4::text)
-ORDER BY match_time, id
+  AND ($5::text IS NULL OR competition_slug = $5::text)
+ORDER BY competition_name, match_time, id
 `
 
 type ListMatchesParams struct {
-	FromTime pgtype.Timestamptz
-	ToTime   pgtype.Timestamptz
-	TeamID   pgtype.UUID
-	Status   pgtype.Text
+	FromTime    pgtype.Timestamptz
+	ToTime      pgtype.Timestamptz
+	TeamID      pgtype.UUID
+	Status      pgtype.Text
+	Competition pgtype.Text
 }
 
 func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]MatchRow, error) {
@@ -154,6 +159,7 @@ func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]Mat
 		arg.ToTime,
 		arg.TeamID,
 		arg.Status,
+		arg.Competition,
 	)
 	if err != nil {
 		return nil, err
@@ -179,6 +185,9 @@ func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]Mat
 			&i.AwayName,
 			&i.AwayShortName,
 			&i.AwayLogoUrl,
+			&i.CompetitionID,
+			&i.CompetitionSlug,
+			&i.CompetitionName,
 		); err != nil {
 			return nil, err
 		}

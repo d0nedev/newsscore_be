@@ -32,10 +32,11 @@ Kontrak lengkap: [`openapi.yaml`](openapi.yaml). Base path: `/api/v1`. Semua err
 |---|---|---|---|
 | GET | `/health` | - | Liveness |
 | GET | `/ready` | - | Readiness (ping DB; 503 saat drain) |
-| GET | `/api/v1/matches?date=DD.MM.YYYY&teamId=&status=` | - | Pertandingan per tanggal (WIB) |
+| GET | `/api/v1/matches?date=DD.MM.YYYY&leagueId=&teamId=&status=` | - | Pertandingan per tanggal (WIB) |
 | GET | `/api/v1/matches/{id}` | - | Detail: kejadian, statistik, susunan pemain |
 | GET | `/api/v1/matches/stream` | - | SSE: event `score` dan `match_event` |
-| GET | `/api/v1/standings?season=` | - | Klasemen, dihitung dari hasil |
+| GET | `/api/v1/leagues` | - | Kompetisi (Super League, Championship, Piala Presiden) |
+| GET | `/api/v1/leagues/{slug}?season=` | - | Kompetisi + klasemen, dihitung dari hasil |
 | GET | `/api/v1/teams/{id}` | - | Profil tim, skuad, 5 laga terakhir/berikutnya |
 | GET | `/api/v1/players/{id}` | - | Profil pemain, total musim, log pertandingan |
 | GET | `/api/v1/search?q=` | - | Cari tim, pemain, berita (tahan salah ketik) |

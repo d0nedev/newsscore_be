@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/d0nedev/newsscore/internal/auth"
+	"github.com/d0nedev/newsscore/internal/league"
 	"github.com/d0nedev/newsscore/internal/match"
 	"github.com/d0nedev/newsscore/internal/news"
 	"github.com/d0nedev/newsscore/internal/platform/config"
@@ -13,7 +14,6 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/stream"
 	"github.com/d0nedev/newsscore/internal/player"
 	"github.com/d0nedev/newsscore/internal/search"
-	"github.com/d0nedev/newsscore/internal/standing"
 	"github.com/d0nedev/newsscore/internal/team"
 
 	"github.com/go-chi/chi/v5"
@@ -43,7 +43,7 @@ func modules(
 
 	newsHandler := news.NewHandler(news.NewService(pool, queries, tp.Tracer("news")))
 
-	standings := standing.NewHandler(standing.NewService(queries, tp.Tracer("standing")))
+	leagues := league.NewHandler(league.NewService(queries, tp.Tracer("league")))
 
 	teams := team.NewHandler(team.NewService(queries, tp.Tracer("team")))
 	players := player.NewHandler(player.NewService(queries, tp.Tracer("player")))
@@ -56,7 +56,7 @@ func modules(
 	return []func(chi.Router){
 		func(r chi.Router) { match.RegisterRoutes(r, matches, hub, logger) },
 		func(r chi.Router) { auth.RegisterRoutes(r, authHandler, logger, loginLimit) },
-		func(r chi.Router) { standing.RegisterRoutes(r, standings, logger) },
+		func(r chi.Router) { league.RegisterRoutes(r, leagues, logger) },
 		func(r chi.Router) { team.RegisterRoutes(r, teams, logger) },
 		func(r chi.Router) { player.RegisterRoutes(r, players, logger) },
 		func(r chi.Router) { search.RegisterRoutes(r, searcher, logger) },

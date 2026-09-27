@@ -10,6 +10,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Competition struct {
+	ID             pgtype.UUID
+	Slug           string
+	Name           string
+	Country        string
+	Type           string
+	FlashscorePath string
+	Active         bool
+	SortOrder      int16
+}
+
 type Match struct {
 	ID             pgtype.UUID
 	FlashscoreID   string
@@ -24,6 +35,7 @@ type Match struct {
 	UpdatedAt      pgtype.Timestamptz
 	Stage          pgtype.Int2
 	StageStartedAt pgtype.Timestamptz
+	CompetitionID  pgtype.UUID
 }
 
 type MatchEvent struct {
@@ -49,22 +61,25 @@ type MatchLineup struct {
 }
 
 type MatchRow struct {
-	ID             pgtype.UUID
-	Season         int16
-	Status         string
-	MatchTime      pgtype.Timestamptz
-	HomeScore      pgtype.Int2
-	AwayScore      pgtype.Int2
-	Stage          pgtype.Int2
-	StageStartedAt pgtype.Timestamptz
-	HomeTeamID     pgtype.UUID
-	AwayTeamID     pgtype.UUID
-	HomeName       string
-	HomeShortName  string
-	HomeLogoUrl    pgtype.Text
-	AwayName       string
-	AwayShortName  string
-	AwayLogoUrl    pgtype.Text
+	ID              pgtype.UUID
+	Season          int16
+	Status          string
+	MatchTime       pgtype.Timestamptz
+	HomeScore       pgtype.Int2
+	AwayScore       pgtype.Int2
+	Stage           pgtype.Int2
+	StageStartedAt  pgtype.Timestamptz
+	HomeTeamID      pgtype.UUID
+	AwayTeamID      pgtype.UUID
+	HomeName        string
+	HomeShortName   string
+	HomeLogoUrl     pgtype.Text
+	AwayName        string
+	AwayShortName   string
+	AwayLogoUrl     pgtype.Text
+	CompetitionID   pgtype.UUID
+	CompetitionSlug string
+	CompetitionName string
 }
 
 type MatchStatistic struct {
