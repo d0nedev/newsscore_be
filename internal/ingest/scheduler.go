@@ -2,32 +2,42 @@ package ingest
 
 import (
 	"context"
-	"log"
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"sort"
 
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Worker struct {
-	db *db.Queries
+	db            *db.Queries
+	logger        *slog.Logger
+	detailsPerRun int
 }
 
-func NewWorker(queries *db.Queries) *Worker {
-	return &Worker{db: queries}
+func NewWorker(queries *db.Queries, logger *slog.Logger, detailsPerRun int) *Worker {
+	return &Worker{db: queries, logger: logger, detailsPerRun: detailsPerRun}
 }
 
-func (w *Worker) StartDailySync(ctx context.Context) {
-	log.Println("Memulai Ingestor Harian (Daily Sync)...")
+// Sync pulls the results page, then fills in details for finished matches that lack them.
+func (w *Worker) Sync(ctx context.Context) error {
+	if err := w.syncResults(ctx); err != nil {
+		return err
+	}
+	return w.syncDetails(ctx)
+}
 
+func (w *Worker) syncResults(ctx context.Context) error {
 	matches, teams, err := flashscore.ScrapeResults()
 	if err != nil {
-		log.Printf("Gagal menarik data dari Flashscore: %v\n", err)
-		return
+		return fmt.Errorf("scrape results: %w", err)
 	}
 
-	log.Printf("Berhasil mengambil %d tim dan %d pertandingan dari Provider.\n", len(teams), len(matches))
+	w.logger.Info("results scraped", slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
 
 	teamIDs := make(map[string]pgtype.UUID, len(teams))
 	for _, t := range teams {
@@ -38,7 +48,7 @@ func (w *Worker) StartDailySync(ctx context.Context) {
 			LogoUrl:      pgtype.Text{String: t.LogoURL, Valid: t.LogoURL != ""},
 		})
 		if err != nil {
-			log.Printf("Gagal Upsert Tim %s: %v\n", t.Name, err)
+			w.logger.Error("upsert team failed", slog.String("team", t.Name), slog.Any("error", err))
 			continue
 		}
 		teamIDs[t.FlashscoreID] = id
@@ -50,7 +60,7 @@ func (w *Worker) StartDailySync(ctx context.Context) {
 		homeID, okHome := teamIDs[m.HomeTeamFlashscoreID]
 		awayID, okAway := teamIDs[m.AwayTeamFlashscoreID]
 		if !okHome || !okAway {
-			log.Printf("Lewati Match %s: tim belum tersimpan\n", m.FlashscoreID)
+			w.logger.Warn("skip match: team not stored", slog.String("match", m.FlashscoreID))
 			continue
 		}
 		season := int16(m.Season)
@@ -66,7 +76,8 @@ func (w *Worker) StartDailySync(ctx context.Context) {
 			AwayScore:    pgtype.Int2{Int16: int16(m.AwayScore), Valid: true},
 		})
 		if err != nil {
-			log.Printf("Gagal Upsert Match %s: %v\n", m.FlashscoreID, err)
+			w.logger.Error("upsert match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
+			continue
 		}
 
 		if m.Status == "finished" {
@@ -102,11 +113,89 @@ func (w *Worker) StartDailySync(ctx context.Context) {
 
 	for i, st := range standings {
 		st.Rank = int16(i + 1)
-		err := w.db.UpsertStanding(ctx, *st)
-		if err != nil {
-			log.Printf("Gagal Upsert Standing %s: %v\n", st.TeamID, err)
+		if err := w.db.UpsertStanding(ctx, *st); err != nil {
+			w.logger.Error("upsert standing failed", slog.String("team", st.TeamID.String()), slog.Any("error", err))
 		}
 	}
 
-	log.Println("Ingestor Harian Selesai! Seluruh data tersimpan ke database.")
+	return nil
+}
+
+type statJSON struct {
+	Label string `json:"label"`
+	Home  string `json:"home"`
+	Away  string `json:"away"`
+}
+
+func (w *Worker) syncDetails(ctx context.Context) error {
+	if w.detailsPerRun == 0 {
+		return nil
+	}
+
+	pending, err := w.db.ListMatchesMissingDetails(ctx, int32(w.detailsPerRun))
+	if err != nil {
+		return fmt.Errorf("list matches missing details: %w", err)
+	}
+
+	for _, m := range pending {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := w.syncMatchDetails(ctx, m); err != nil {
+			// ponytail: a match Flashscore never serves details for is retried every run; add an attempts column if that shows up in logs.
+			w.logger.Error("sync match details failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
+		}
+	}
+
+	return nil
+}
+
+func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDetailsRow) error {
+	events, stats, players, err := flashscore.ScrapeMatchDetails(m.FlashscoreID)
+	if err != nil {
+		return err
+	}
+
+	teamBySide := func(side int) pgtype.UUID {
+		if side == 2 {
+			return m.AwayTeamID
+		}
+		return m.HomeTeamID
+	}
+
+	for _, e := range events {
+		if err := w.db.UpsertMatchEvent(ctx, db.UpsertMatchEventParams{
+			MatchID:      m.ID,
+			FlashscoreID: e.ID,
+			Type:         e.Type,
+			Minute:       e.Minute,
+			PlayerName:   e.PlayerName,
+			TeamID:       teamBySide(e.Team),
+		}); err != nil {
+			return fmt.Errorf("upsert event %s: %w", e.ID, err)
+		}
+	}
+
+	for _, p := range players {
+		if _, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
+			FlashscoreID: p.FlashscoreID,
+			TeamID:       teamBySide(p.Team),
+			Name:         p.Name,
+			Nationality:  pgtype.Text{String: p.Nationality, Valid: p.Nationality != ""},
+		}); err != nil {
+			return fmt.Errorf("upsert player %s: %w", p.FlashscoreID, err)
+		}
+	}
+
+	out := make([]statJSON, 0, len(stats))
+	for _, s := range stats {
+		out = append(out, statJSON{Label: s.Name, Home: s.Home, Away: s.Away})
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+
+	// Stats go last: their row marks the match as done, so a failure above retries it.
+	return w.db.UpsertMatchStats(ctx, db.UpsertMatchStatsParams{MatchID: m.ID, Stats: raw})
 }

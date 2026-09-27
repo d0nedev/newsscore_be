@@ -11,6 +11,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listMatchesMissingDetails = `-- name: ListMatchesMissingDetails :many
+SELECT m.id, m.flashscore_id, m.home_team_id, m.away_team_id
+FROM matches m
+WHERE m.status = 'finished'
+  AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
+ORDER BY m.match_time DESC
+LIMIT $1
+`
+
+type ListMatchesMissingDetailsRow struct {
+	ID           pgtype.UUID
+	FlashscoreID string
+	HomeTeamID   pgtype.UUID
+	AwayTeamID   pgtype.UUID
+}
+
+// Newest finished matches first, so a stubborn old match cannot block fresh ones.
+func (q *Queries) ListMatchesMissingDetails(ctx context.Context, limit int32) ([]ListMatchesMissingDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listMatchesMissingDetails, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMatchesMissingDetailsRow
+	for rows.Next() {
+		var i ListMatchesMissingDetailsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FlashscoreID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertMatchEvent = `-- name: UpsertMatchEvent :exec
 INSERT INTO match_events (match_id, flashscore_id, type, minute, player_name, team_id, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, now())

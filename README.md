@@ -61,6 +61,7 @@ Set `API_KEYS=...` di shell sebelum `make up` untuk mengaktifkan auth di compose
 cp .env.example .env     # sesuaikan DB_*
 make migrate-up DATABASE_URL='postgres://user:pass@localhost:5432/newsscore?sslmode=disable'
 make run
+go run ./cmd/ingestor   # scrape Flashscore tiap INGEST_INTERVAL; jalankan satu instans saja
 ```
 
 ## Konfigurasi

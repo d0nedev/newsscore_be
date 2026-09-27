@@ -12,6 +12,9 @@ import (
 	"github.com/d0nedev/newsscore/internal/domain"
 )
 
+// client bounds every Flashscore call so a hung connection cannot stall the ingestor.
+var client = &http.Client{Timeout: 30 * time.Second}
+
 func ScrapeResults() ([]domain.Match, []domain.Team, error) {
 	req, err := http.NewRequest("GET", "https://www.flashscore.com/football/indonesia/super-league/results/", nil)
 	if err != nil {
@@ -19,7 +22,7 @@ func ScrapeResults() ([]domain.Match, []domain.Team, error) {
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -28,6 +28,7 @@ func validConfig() Config {
 		Tracing:   TracingConfig{SampleRate: 1},
 		OTLP:      OTLPConfig{Endpoint: "localhost:4317", Insecure: true},
 		RateLimit: RateLimitConfig{RequestsPerMinute: 60},
+		Ingest:    IngestConfig{Interval: 5 * time.Minute, DetailsPerRun: 20},
 	}
 }
 

@@ -20,7 +20,7 @@ func fetchFeed(feedType, matchID string) ([]map[string]string, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 	req.Header.Set("x-fsign", "SW9D1eZo")
 
-	res, err := http.DefaultClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -78,9 +78,9 @@ type Player struct {
 
 func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, error) {
 	// 1. Stats
-	statsRec, err := fetchFeed("df_st_1", matchID)
+	statsRec, statsErr := fetchFeed("df_st_1", matchID)
 	var stats []MatchStat
-	if err == nil {
+	if statsErr == nil {
 		for _, m := range statsRec {
 			if name, ok := m["SG"]; ok {
 				stats = append(stats, MatchStat{
@@ -93,9 +93,9 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 	}
 
 	// 2. Events
-	eventsRec, err := fetchFeed("df_sui_1", matchID)
+	eventsRec, eventsErr := fetchFeed("df_sui_1", matchID)
 	var events []MatchEvent
-	if err == nil {
+	if eventsErr == nil {
 		for _, m := range eventsRec {
 			if id, ok := m["III"]; ok {
 				team := 1
@@ -136,6 +136,11 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 				})
 			}
 		}
+	}
+
+	// Only fail when nothing usable came back; lineups alone are not worth saving.
+	if statsErr != nil && eventsErr != nil {
+		return nil, nil, nil, fmt.Errorf("stats: %w; events: %w", statsErr, eventsErr)
 	}
 
 	return events, stats, players, nil

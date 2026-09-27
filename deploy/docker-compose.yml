@@ -44,7 +44,7 @@ services:
         VERSION: ${VERSION:-dev}
     image: newsscore:${VERSION:-dev}
     restart: unless-stopped
-    environment:
+    environment: &app-env
       APP_SERVICE_NAME: newsscore
       APP_PORT: "8080"
       APP_ENV: production
@@ -78,6 +78,24 @@ services:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
+
+  # Exactly one replica: a second ingestor scrapes twice and doubles the block risk.
+  ingestor:
+    image: newsscore:${VERSION:-dev}
+    entrypoint: ["/ingestor"]
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      INGEST_INTERVAL: ${INGEST_INTERVAL:-5m}
+      INGEST_DETAILS_PER_RUN: ${INGEST_DETAILS_PER_RUN:-20}
+      DB_MAX_CONNS: "4"
+    mem_limit: 256m
+    labels:
+      service: newsscore-ingestor
+    logging: *logging
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   migrate:
     image: migrate/migrate:v4.20.1

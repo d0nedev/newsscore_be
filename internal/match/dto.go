@@ -131,10 +131,14 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 	}
 
 	for _, e := range d.Events {
+		kind := eventType(e.Type)
+		if kind == "" {
+			continue
+		}
 		resp.Events = append(resp.Events, EventResponse{
 			Minute: e.Minute,
 			Team:   side(e.TeamID, d.Match.HomeID),
-			Type:   eventType(e.Type),
+			Type:   kind,
 			Player: e.PlayerName,
 		})
 	}
@@ -162,8 +166,10 @@ func eventType(raw string) string {
 		return "yellow"
 	case strings.Contains(s, "sub"):
 		return "sub"
-	case strings.Contains(s, "goal"):
+	case strings.Contains(s, "goal"), s == "penalty":
 		return "goal"
+	case s == "assistance":
+		return "" // the assist belongs to a goal row, not its own event
 	}
 	return s
 }

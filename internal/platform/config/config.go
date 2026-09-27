@@ -27,6 +27,7 @@ type Config struct {
 	OTLP      OTLPConfig
 	Auth      AuthConfig
 	RateLimit RateLimitConfig
+	Ingest    IngestConfig
 }
 
 type AppConfig struct {
@@ -71,6 +72,11 @@ type AuthConfig struct {
 	APIKeys []string
 }
 
+type IngestConfig struct {
+	Interval      time.Duration
+	DetailsPerRun int
+}
+
 type RateLimitConfig struct {
 	RequestsPerMinute int
 }
@@ -103,6 +109,8 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_SSL_MODE", "require")
 	v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 0.1)
 	v.SetDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 600)
+	v.SetDefault("INGEST_INTERVAL", "5m")
+	v.SetDefault("INGEST_DETAILS_PER_RUN", 20)
 
 	env := v.GetString("APP_ENV")
 
@@ -156,6 +164,10 @@ func Load() (*Config, error) {
 		RateLimit: RateLimitConfig{
 			RequestsPerMinute: v.GetInt("RATE_LIMIT_REQUESTS_PER_MINUTE"),
 		},
+		Ingest: IngestConfig{
+			Interval:      v.GetDuration("INGEST_INTERVAL"),
+			DetailsPerRun: v.GetInt("INGEST_DETAILS_PER_RUN"),
+		},
 	}
 
 	if err := config.Validate(); err != nil {
@@ -208,6 +220,8 @@ func (c *Config) Validate() error {
 	require(c.OTLP.Endpoint != "", "OTEL_EXPORTER_OTLP_ENDPOINT is required")
 
 	require(c.RateLimit.RequestsPerMinute > 0, "RATE_LIMIT_REQUESTS_PER_MINUTE must be greater than 0")
+	require(c.Ingest.Interval >= time.Minute, "INGEST_INTERVAL must be at least 1m")
+	require(c.Ingest.DetailsPerRun >= 0, "INGEST_DETAILS_PER_RUN must not be negative")
 
 	if c.App.Env != EnvDevelopment {
 		require(len(c.Auth.APIKeys) > 0, "API_KEYS is required outside development")

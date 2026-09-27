@@ -54,7 +54,8 @@ func TestToMatchResponse(t *testing.T) {
 func TestEventType(t *testing.T) {
 	for raw, want := range map[string]string{
 		"Goal": "goal", "Yellow Card": "yellow", "Red Card": "red",
-		"Substitution - In": "sub", "Penalty Awarded": "penalty awarded",
+		"Substitution - In": "sub", "Penalty": "goal", "Assistance": "",
+		"Not on pitch": "not on pitch",
 	} {
 		if got := eventType(raw); got != want {
 			t.Errorf("eventType(%q) = %q, want %q", raw, got, want)

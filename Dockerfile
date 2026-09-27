@@ -11,11 +11,12 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /out/server ./cmd/server
+    -o /out/ ./cmd/server ./cmd/ingestor
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/server /server
+COPY --from=build /out/ingestor /ingestor
 
 USER nonroot:nonroot
 EXPOSE 8080
