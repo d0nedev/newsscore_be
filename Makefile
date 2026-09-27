@@ -1,7 +1,7 @@
-DATABASE_URL ?= postgres://postgres:postgres@localhost:55432/chi_go_boilerplate?sslmode=disable
+DATABASE_URL ?= postgres://postgres:postgres@localhost:55432/newsscore?sslmode=disable
 MIGRATE = docker run --rm --network host -v $(CURDIR)/db/migrations:/migrations:ro migrate/migrate:v4.20.1 -path=/migrations -database "$(DATABASE_URL)"
 
-.PHONY: run test test-integration lint vuln sqlc migrate-up migrate-down up down openapi-lint alerts-test loadtest
+.PHONY: run test test-integration lint vuln sqlc migrate-up migrate-down up down openapi-lint alerts-test
 
 run:
 	go run ./cmd/server
@@ -41,9 +41,3 @@ alerts-test:
 	docker run --rm -v $(CURDIR):/w -w /w --entrypoint promtool prom/prometheus:v3.6.0 check rules prometheus-alerts.yml
 	docker run --rm -v $(CURDIR):/w -w /w --entrypoint promtool prom/prometheus:v3.6.0 test rules prometheus-alerts_test.yml
 
-# Needs a running stack with a high RATE_LIMIT_REQUESTS_PER_MINUTE; see docs/runbook.md.
-BASE_URL ?= http://localhost:8080
-RATE ?= 200
-DURATION ?= 60s
-loadtest:
-	docker run --rm --network host -v $(CURDIR)/loadtest:/scripts:ro -e BASE_URL=$(BASE_URL) -e API_KEY=$(API_KEY) -e RATE=$(RATE) -e DURATION=$(DURATION) grafana/k6:1.3.0 run /scripts/products.js

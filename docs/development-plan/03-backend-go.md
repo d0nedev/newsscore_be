@@ -13,7 +13,6 @@
 | Circuit breaker | `github.com/sony/gobreaker` | |
 | Konfigurasi | `github.com/caarlos0/env/v11` | Konfigurasi lewat environment variable |
 | Validasi | `github.com/go-playground/validator/v10` | |
-| JWT admin | `github.com/golang-jwt/jwt/v5` | |
 | Uji integrasi | `github.com/testcontainers/testcontainers-go` | PostgreSQL sungguhan saat uji |
 | Galat | `github.com/getsentry/sentry-go` | |
 
@@ -45,10 +44,10 @@ Logging memakai `log/slog` dari pustaka standar. Tidak perlu pustaka pihak ketig
 │   │   ├── gen/                 # dihasilkan sqlc, jangan disunting
 │   │   └── postgres.go          # adapter ke interface domain
 │   ├── provider/
-│   │   └── sportmonks/          # anti-corruption layer
-│   │       ├── client.go
-│   │       ├── dto.go           # bentuk mereka, tidak keluar dari paket ini
-│   │       └── mapper.go        # dto → domain
+│   │   ├── flashscore/          # anti-corruption layer
+│   │   │   ├── scraper.go       # hasil/jadwal dari cjs.initialFeeds
+│   │   │   └── details.go       # df_sui/df_st/df_li + parser ¬~ ¬ ÷
+│   │   └── sofascore/           # penyedia cadangan
 │   ├── cache/
 │   │   ├── redis.go
 │   │   └── swr.go               # stale-while-revalidate + single-flight
@@ -97,7 +96,8 @@ Migrasi pertama, disederhanakan agar terbaca:
 ```sql
 -- kompetisi
 CREATE TABLE leagues (
-    id           BIGINT PRIMARY KEY,          -- id SportMonks
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flashscore_id TEXT UNIQUE,
     slug         TEXT NOT NULL UNIQUE,
     name         TEXT NOT NULL,
     country_code TEXT,
@@ -107,14 +107,15 @@ CREATE TABLE leagues (
 );
 
 CREATE TABLE seasons (
-    id         BIGINT PRIMARY KEY,
-    league_id  BIGINT NOT NULL REFERENCES leagues(id),
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    league_id  UUID NOT NULL REFERENCES leagues(id),
     name       TEXT NOT NULL,
     is_current BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE teams (
-    id        BIGINT PRIMARY KEY,
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flashscore_id TEXT UNIQUE,
     slug      TEXT NOT NULL UNIQUE,
     name      TEXT NOT NULL,
     short_name TEXT,
@@ -125,7 +126,8 @@ CREATE TABLE teams (
 );
 
 CREATE TABLE players (
-    id          BIGINT PRIMARY KEY,
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flashscore_id TEXT UNIQUE,
     slug        TEXT NOT NULL UNIQUE,
     name        TEXT NOT NULL,
     position    TEXT,
@@ -141,11 +143,12 @@ CREATE TYPE match_status AS ENUM (
 );
 
 CREATE TABLE matches (
-    id            BIGINT PRIMARY KEY,
-    season_id     BIGINT NOT NULL REFERENCES seasons(id),
-    league_id     BIGINT NOT NULL REFERENCES leagues(id),
-    home_team_id  BIGINT NOT NULL REFERENCES teams(id),
-    away_team_id  BIGINT NOT NULL REFERENCES teams(id),
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    flashscore_id TEXT UNIQUE,
+    season_id     UUID NOT NULL REFERENCES seasons(id),
+    league_id     UUID NOT NULL REFERENCES leagues(id),
+    home_team_id  UUID NOT NULL REFERENCES teams(id),
+    away_team_id  UUID NOT NULL REFERENCES teams(id),
     kickoff_at    TIMESTAMPTZ NOT NULL,
     status        match_status NOT NULL DEFAULT 'scheduled',
     minute        SMALLINT,
@@ -164,30 +167,30 @@ CREATE INDEX idx_matches_live     ON matches (status) WHERE status IN ('live','h
 CREATE INDEX idx_matches_team     ON matches (home_team_id, away_team_id);
 
 CREATE TABLE match_events (
-    id          BIGSERIAL PRIMARY KEY,
-    match_id    BIGINT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-    external_id BIGINT,
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id    UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    flashscore_id TEXT,
     type        TEXT NOT NULL,        -- goal, own_goal, penalty, yellow, red, sub, var
     minute      SMALLINT NOT NULL,
     extra_minute SMALLINT,
-    team_id     BIGINT REFERENCES teams(id),
-    player_id   BIGINT REFERENCES players(id),
-    related_player_id BIGINT REFERENCES players(id),
+    team_id     UUID REFERENCES teams(id),
+    player_id   UUID REFERENCES players(id),
+    related_player_id UUID REFERENCES players(id),
     detail      TEXT,
-    UNIQUE (match_id, external_id)
+    UNIQUE (match_id, flashscore_id)
 );
 
 CREATE TABLE match_statistics (
-    match_id BIGINT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-    team_id  BIGINT NOT NULL REFERENCES teams(id),
+    match_id UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    team_id  UUID NOT NULL REFERENCES teams(id),
     stats    JSONB NOT NULL,          -- penguasaan bola, tembakan, dan sebagainya
     PRIMARY KEY (match_id, team_id)
 );
 
 CREATE TABLE lineups (
-    match_id  BIGINT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-    team_id   BIGINT NOT NULL REFERENCES teams(id),
-    player_id BIGINT NOT NULL REFERENCES players(id),
+    match_id  UUID NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    team_id   UUID NOT NULL REFERENCES teams(id),
+    player_id UUID NOT NULL REFERENCES players(id),
     is_starter BOOLEAN NOT NULL,
     shirt_number SMALLINT,
     position  TEXT,
@@ -196,8 +199,8 @@ CREATE TABLE lineups (
 );
 
 CREATE TABLE standings (
-    season_id  BIGINT NOT NULL REFERENCES seasons(id),
-    team_id    BIGINT NOT NULL REFERENCES teams(id),
+    season_id  UUID NOT NULL REFERENCES seasons(id),
+    team_id    UUID NOT NULL REFERENCES teams(id),
     position   SMALLINT NOT NULL,
     played     SMALLINT NOT NULL,
     won        SMALLINT NOT NULL,
@@ -214,7 +217,7 @@ CREATE TABLE standings (
 
 -- berita
 CREATE TABLE articles (
-    id           BIGSERIAL PRIMARY KEY,
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug         TEXT NOT NULL UNIQUE,
     title        TEXT NOT NULL,
     excerpt      TEXT NOT NULL,
@@ -232,9 +235,9 @@ CREATE INDEX idx_articles_published ON articles (published_at DESC)
 
 -- inti pembeda produk: berita menempel pada entitas
 CREATE TABLE article_entities (
-    article_id  BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    article_id  UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     entity_type TEXT NOT NULL,        -- match, team, player, league
-    entity_id   BIGINT NOT NULL,
+    entity_id   UUID NOT NULL,
     PRIMARY KEY (article_id, entity_type, entity_id)
 );
 
@@ -248,9 +251,10 @@ CREATE INDEX idx_players_name_trgm ON players USING gin (name gin_trgm_ops);
 
 Catatan perancangan:
 
-- `matches.id` memakai id SportMonks secara langsung, bukan id buatan sendiri.
-  Menyederhanakan sinkronisasi. Kalau penyedia berganti kelak, perlu tabel
-  pemetaan — risiko yang diterima secara sadar.
+- Seluruh PK memakai UUID (`gen_random_uuid()`), tidak bergantung penyedia.
+  ID sumber disimpan di `flashscore_id TEXT UNIQUE`; ingestion melakukan upsert
+  lewat `ON CONFLICT (flashscore_id)`. Penyedia baru cukup menambah kolom
+  (mis. `sofascore_id`), PK dan FK tidak berubah.
 - `match_statistics.stats` disimpan sebagai JSONB karena daftar statistik
   berbeda antarkompetisi dan berubah dari waktu ke waktu. Kolom tetap akan
   terus-menerus memaksa migrasi.
@@ -262,8 +266,9 @@ Catatan perancangan:
 
 ## 4. Kontrak API
 
-Awalan `/v1`. Seluruh respons JSON. Waktu dalam RFC 3339 dengan zona UTC;
-konversi ke zona pengguna dilakukan di frontend.
+Awalan `/api/v1`. Rincian kontrak di [`api-contract-plan.md`](api-contract-plan.md);
+bila bertentangan, dokumen itu yang berlaku. Waktu dalam RFC 3339 dengan zona
+UTC; konversi ke zona pengguna dilakukan di klien.
 
 ### Format respons
 
@@ -294,35 +299,35 @@ boleh berubah. Setiap respons membawa header `X-Request-ID`.
 
 | Metode | Jalur | Keterangan |
 |---|---|---|
-| GET | `/v1/matches?date=2026-09-14&league=` | Dikelompokkan per kompetisi, kompetisi prioritas lebih dulu |
-| GET | `/v1/matches/{id}` | Termasuk susunan pemain, statistik, kejadian, rekam pertemuan |
-| GET | `/v1/matches/{id}/related-articles` | |
-| GET | `/v1/leagues` | |
-| GET | `/v1/leagues/{slug}/standings?season=` | |
-| GET | `/v1/leagues/{slug}/matches?round=` | |
-| GET | `/v1/teams/{slug}` | Profil, skuad, jadwal, hasil |
-| GET | `/v1/teams/{slug}/matches?type=upcoming\|past` | |
-| GET | `/v1/players/{slug}` | |
-| GET | `/v1/articles?tag=&team=&cursor=` | |
-| GET | `/v1/articles/{slug}` | |
-| GET | `/v1/search?q=` | Klub, pemain, kompetisi |
-| GET | `/v1/stream/matches?date=` | SSE |
-| GET | `/v1/config` | Konfigurasi jarak jauh untuk frontend |
+| GET | `/api/v1/matches?date=2026-09-14&league=` | Dikelompokkan per kompetisi, kompetisi prioritas lebih dulu |
+| GET | `/api/v1/matches/{id}` | Termasuk susunan pemain, statistik, kejadian, rekam pertemuan |
+| GET | `/api/v1/matches/{id}/related-articles` | |
+| GET | `/api/v1/leagues` | |
+| GET | `/api/v1/leagues/{slug}/standings?season=` | |
+| GET | `/api/v1/leagues/{slug}/matches?round=` | |
+| GET | `/api/v1/teams/{slug}` | Profil, skuad, jadwal, hasil |
+| GET | `/api/v1/teams/{slug}/matches?type=upcoming\|past` | |
+| GET | `/api/v1/players/{slug}` | |
+| GET | `/api/v1/articles?tag=&team=&cursor=` | |
+| GET | `/api/v1/articles/{slug}` | |
+| GET | `/api/v1/search?q=` | Klub, pemain, kompetisi |
+| GET | `/api/v1/stream/matches?date=` | SSE |
+| GET | `/api/v1/config` | Konfigurasi jarak jauh untuk klien |
 | GET | `/healthz`, `/readyz` | |
-| POST | `/v1/admin/auth/login` | |
-| GET/POST/PATCH | `/v1/admin/articles` | JWT wajib |
+| POST | `/api/v1/auth/login` | Set cookie sesi HttpOnly |
+| GET/POST/PATCH | `/api/v1/admin/articles` | Cookie sesi dengan peran admin wajib |
 
 ### Format SSE
 
 ```
 event: score
-data: {"match_id":12345,"home_score":2,"away_score":1,"minute":67}
+data: {"match_id":"0192f0c4-…","home_score":2,"away_score":1,"minute":67}
 
 event: match_event
-data: {"match_id":12345,"type":"goal","minute":67,"player":"Ciro Alves","team_id":99}
+data: {"match_id":"0192f0c4-…","type":"goal","minute":67,"player":"Ciro Alves","team_id":"0192f0c5-…"}
 
 event: status
-data: {"match_id":12345,"status":"finished"}
+data: {"match_id":"0192f0c4-…","status":"finished"}
 
 : heartbeat
 ```
@@ -342,8 +347,10 @@ dianggap menganggur.
 | Jadwal 7 hari ke depan | 6 jam | |
 | Klub, pemain, skuad | 24 jam | |
 
-Di luar jam pertandingan, ingestor nyaris menganggur. Ini penting untuk menjaga
-kuota SportMonks.
+Di luar jam pertandingan, ingestor nyaris menganggur. Ini penting agar volume
+request ke Flashscore tetap wajar dan IP tidak diblokir. Detail pertandingan
+(`df_sui`, `df_st`, `df_li`) hanya diambil saat status berubah, dengan jeda
+minimal 1 detik antar-request.
 
 ### Deteksi perubahan
 
@@ -365,11 +372,12 @@ func Diff(old, new Snapshot) []domain.LiveEvent
 
 Tiga hal yang harus ditangani, dan ketiganya adalah sumber bug tersering:
 
-**Idempotensi.** Setiap event dikunci oleh `external_id` dari penyedia. Batasan
-`UNIQUE (match_id, external_id)` pada `match_events` membuat pengiriman ganda
+**Idempotensi.** Setiap event dikunci oleh `flashscore_id` dari penyedia (`III` pada feed
+`df_sui`). Batasan
+`UNIQUE (match_id, flashscore_id)` pada `match_events` membuat pengiriman ganda
 gagal di tingkat basis data, bukan bergantung pada kedisiplinan kode.
 
-**Revisi data.** SportMonks dapat menganulir gol lewat VAR, sehingga skor bisa
+**Revisi data.** Flashscore dapat menganulir gol lewat VAR, sehingga skor bisa
 terlihat mundur. Penurunan skor tidak boleh diperlakukan sebagai gol baru.
 Terbitkan event `score_correction`, jangan `goal`.
 
@@ -379,19 +387,20 @@ gol yang sudah terjadi.
 
 ### Ketahanan terhadap hulu
 
-Setiap panggilan ke SportMonks wajib dibungkus:
+Setiap panggilan ke Flashscore wajib dibungkus:
 
 ```go
 ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 defer cancel()
 
 res, err := breaker.Execute(func() (any, error) {
-    return client.Fixtures(ctx, params)
+    return scraper.Results(ctx)
 })
 ```
 
 Circuit breaker terbuka setelah lima kegagalan beruntun dan mencoba lagi setelah
-30 detik. Tanpa batas waktu eksplisit, panggilan yang menggantung akan menumpuk
+30 detik. Respons `403` atau kosong dihitung gagal dan memicu peringatan
+(kemungkinan `x-fsign` berubah). Tanpa batas waktu eksplisit, panggilan yang menggantung akan menumpuk
 dan menjatuhkan seluruh proses.
 
 ## 6. Cache
@@ -424,7 +433,7 @@ perlu menunggu TTL habis.
 | `domain` | Uji unit murni, tanpa mock |
 | `service` | Mock repository lewat interface yang didefinisikan di paket ini |
 | `repository` | Testcontainers dengan PostgreSQL sungguhan, bukan sqlite |
-| `provider` | Respons SportMonks yang direkam sebagai berkas testdata |
+| `provider` | Halaman dan feed Flashscore yang direkam sebagai berkas testdata; uji parser wajib |
 | `transport` | `httptest` dengan service tiruan |
 | `ingest/differ` | Uji tabel, dan di sinilah kepadatan kasus uji paling dibutuhkan |
 
@@ -438,8 +447,8 @@ Seluruhnya lewat environment variable, tanpa berkas konfigurasi di repositori.
 
 ```
 APP_ENV, HTTP_PORT, DATABASE_URL, REDIS_URL,
-SPORTMONKS_API_KEY, SPORTMONKS_BASE_URL,
-JWT_SECRET, SENTRY_DSN, LOG_LEVEL,
+FLASHSCORE_BASE_URL, FLASHSCORE_FSIGN, SCRAPE_MIN_DELAY,
+SESSION_TTL, SENTRY_DSN, LOG_LEVEL,
 INGEST_LIVE_INTERVAL, INGEST_ENABLED
 ```
 

@@ -68,16 +68,16 @@ func TestRouteTagNamesSpanWithPattern(t *testing.T) {
 
 	r := chi.NewRouter()
 	r.Use(RouteTag)
-	r.Get("/products/{id}", ok)
+	r.Get("/matches/{id}", ok)
 
 	h := otelhttp.NewHandler(r, "svc", otelhttp.WithTracerProvider(tp))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/products/123", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/matches/123", nil))
 
 	spans := sr.Ended()
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d", len(spans))
 	}
-	if got := spans[0].Name(); got != "GET /products/{id}" {
+	if got := spans[0].Name(); got != "GET /matches/{id}" {
 		t.Errorf("span name = %q", got)
 	}
 }

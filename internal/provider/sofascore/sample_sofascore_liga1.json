@@ -1,0 +1,59 @@
+{
+  "standings": [
+    {
+      "tournament": {
+        "name": "Liga 1",
+        "slug": "liga-1",
+        "uniqueTournament": { "id": 296 }
+      },
+      "type": "total",
+      "rows": [
+        {
+          "position": 1,
+          "team": {
+            "id": 11111,
+            "name": "Persib Bandung",
+            "shortName": "Persib"
+          },
+          "matches": 3,
+          "wins": 2,
+          "draws": 1,
+          "losses": 0,
+          "scoresFor": 6,
+          "scoresAgainst": 2,
+          "points": 7
+        },
+        {
+          "position": 2,
+          "team": {
+            "id": 22222,
+            "name": "Persija Jakarta",
+            "shortName": "Persija"
+          },
+          "matches": 3,
+          "wins": 2,
+          "draws": 0,
+          "losses": 1,
+          "scoresFor": 4,
+          "scoresAgainst": 2,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "team": {
+            "id": 33333,
+            "name": "Borneo FC Samarinda",
+            "shortName": "Borneo"
+          },
+          "matches": 3,
+          "wins": 1,
+          "draws": 2,
+          "losses": 0,
+          "scoresFor": 3,
+          "scoresAgainst": 1,
+          "points": 5
+        }
+      ]
+    }
+  ]
+}

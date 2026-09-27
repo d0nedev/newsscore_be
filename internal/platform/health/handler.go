@@ -2,7 +2,7 @@ package health
 
 import (
 	"context"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/httpx"
+	"github.com/d0nedev/newsscore/internal/platform/httpx"
 	"net/http"
 	"sync/atomic"
 	"time"

@@ -2,7 +2,7 @@ package logging
 
 import (
 	"context"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/requestcontext"
+	"github.com/d0nedev/newsscore/internal/platform/requestcontext"
 	"log/slog"
 	"net"
 	"net/http"

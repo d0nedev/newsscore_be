@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/requestcontext"
+	"github.com/d0nedev/newsscore/internal/platform/requestcontext"
 	"net/http"
 	"regexp"
 	"uuid"

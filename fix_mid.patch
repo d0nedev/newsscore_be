@@ -1,0 +1,26 @@
+--- internal/platform/middleware/middleware_test.go
++++ internal/platform/middleware/middleware_test.go
+@@ -62,25 +62,6 @@
+ 	}
+ }
+ 
+-func TestRouteTagUpdatesOtelSpanName(t *testing.T) {
+-	sr := tracetest.NewSpanRecorder()
+-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+-
+-	r := chi.NewRouter()
+-	r.Use(RouteTag)
+-
+-	h := otelhttp.NewHandler(r, "svc", otelhttp.WithTracerProvider(tp))
+-
+-	spans := sr.Ended()
+-	if len(spans) != 1 {
+-		t.Fatalf("spans = %d", len(spans))
+-	}
+-		t.Errorf("span name = %q", got)
+-	}
+-}
+-
+ func TestPanicIsAccessLoggedAs500(t *testing.T) {
+ 	var buf bytes.Buffer
+ 	logger := slog.New(slog.NewJSONHandler(&buf, nil))

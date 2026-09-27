@@ -1,4 +1,4 @@
-# Runbook: chi-go-boilerplate
+# Runbook: newsscore
 
 Setiap alert di `prometheus-alerts.yml` punya `annotations.runbook` yang mengarah ke bagian di dokumen ini.
 
@@ -9,14 +9,14 @@ Setiap alert di `prometheus-alerts.yml` punya `annotations.runbook` yang mengara
 | Availability | 99.9% request tanpa 5xx | `service:http_errors_5xx:rate5m / service:http_requests:rate5m` | ~43 menit setara 100% error |
 | Latency | p95 < 300ms per route | `service:http_latency_p95:5m` | — |
 
-Baseline load test lokal (lihat `loadtest/products.js`): pada 3000 req/s, p95 baca 3.6ms dan tulis 7.95ms, dengan 0% error. Angka ini diambil dari satu laptop di mana app, Postgres, dan generator beban berjalan di host yang sama, jadi hanya berguna sebagai pembanding antar versi, bukan sebagai estimasi kapasitas production.
+Baseline load test belum ada; buat ulang setelah endpoint pertandingan tersedia.
 
 ## Sinyal Umum
 
 | Kebutuhan | Tempat |
 |---|---|
 | Metrics | Prometheus. Label `http_route`, `http_response_status_code`, `service_version`, `deployment_environment_name` |
-| Trace | Jaeger, service `chi-go-boilerplate`. Nama span `GET /api/v1/products/{id}` dan `ProductService.*` |
+| Trace | Jaeger, service `newsscore`. Nama span mengikuti route, mis. `GET /api/v1/matches/{id}` |
 | Log | JSON stdout. Korelasi lewat `request_id` (juga di header `X-Request-ID`) dan `trace_id` |
 | Konfigurasi efektif | Log `configuration loaded` saat startup |
 
@@ -27,7 +27,7 @@ Rasio 5xx di atas 1.4% selama 5 menit, artinya error budget bulanan habis sekita
 1. Cari route mana yang gagal: `sum by (http_route, http_response_status_code) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))`.
 2. Cek apakah bertepatan dengan rilis: pisahkan per `service_version`. Jika error hanya ada di versi baru, rollback.
 3. Cari log `"level":"ERROR"` dan periksa `error_code`:
-   - `PRODUCT_*_FAILED`: error dari database. Cek `/ready`, koneksi Postgres, dan apakah query dibatalkan oleh `statement_timeout` (`canceling statement due to statement timeout`) atau oleh batas waktu request (`context deadline exceeded`, lihat ServiceDatabasePoolSaturated).
+   - `<DOMAIN>_*_FAILED`: error dari database. Cek `/ready`, koneksi Postgres, dan apakah query dibatalkan oleh `statement_timeout` (`canceling statement due to statement timeout`) atau oleh batas waktu request (`context deadline exceeded`, lihat ServiceDatabasePoolSaturated).
    - `panic recovered`: bug. Lihat `stack_trace`, lalu rollback.
 4. Buka trace contoh lewat `trace_id` dari log untuk melihat span DB yang gagal.
 
@@ -37,12 +37,12 @@ p95 sebuah route di atas 300ms selama 10 menit.
 
 1. Di Jaeger, urutkan trace route tersebut berdasarkan durasi. Bandingkan span `pool.acquire` dengan span query.
    - `pool.acquire` lama: pool DB penuh. Pertimbangkan menaikkan `DB_MAX_CONNS` (perhatikan `max_connections` Postgres dikali jumlah replika) atau menambah replika.
-   - Query lama: cek `pg_stat_statements` dan rencana eksekusi. Untuk list, pastikan index `products_created_at_id_idx` dipakai.
+   - Query lama: cek `pg_stat_statements` dan rencana eksekusi. Untuk list, pastikan index yang sesuai dipakai (mis. `matches (match_time)`).
 2. Pastikan tidak ada klien yang meminta `limit=100` secara berlebihan.
 
 ## ServiceDatabasePoolSaturated
 
-Minimal satu replika memakai ≥ 90% koneksi pool (`DB_MAX_CONNS`) selama 5 menit. Request berikutnya menunggu koneksi, dan kalau menunggu melewati batas waktu request (`APP_WRITE_TIMEOUT` dikurangi margin), request gagal dengan `PRODUCT_*_FAILED` dan `cause` berisi `context deadline exceeded`.
+Minimal satu replika memakai ≥ 90% koneksi pool (`DB_MAX_CONNS`) selama 5 menit. Request berikutnya menunggu koneksi, dan kalau menunggu melewati batas waktu request (`APP_WRITE_TIMEOUT` dikurangi margin), request gagal dengan `<DOMAIN>_*_FAILED` dan `cause` berisi `context deadline exceeded`.
 
 1. Cek apakah query melambat: `rate(pgxpool_empty_acquire_wait_time_nanoseconds_total[5m])` naik bersamaan dengan latency, dan trace menunjukkan span query yang lama. Kalau ya, masalahnya di DB, bukan ukuran pool (lihat ServiceHighLatency).
 2. Kalau query normal tapi trafik naik: tambah replika, atau naikkan `DB_MAX_CONNS`. Pastikan `DB_MAX_CONNS × jumlah replika` masih di bawah `max_connections` Postgres.
@@ -86,10 +86,10 @@ Topologi: satu VPS menjalankan Caddy (HTTPS otomatis), app, Postgres, migrate, d
    - **Alert rules**: import `prometheus-alerts.yml`. Metrics lewat OTLP memakai label `job`/`instance`, bukan `exported_job`/`exported_instance`:
      `sed 's/exported_job/job/g; s/exported_instance/instance/g' prometheus-alerts.yml`.
      Lewati `ServiceTelemetryPipelineDown` (tidak ada scrape Prometheus); penggantinya `ServiceNoTraffic` + uptime check.
-   - **Dashboard**: import `grafana/dashboards/chi-go-boilerplate.json` dengan substitusi label yang sama.
+   - **Dashboard**: import `grafana/dashboards/newsscore.json` dengan substitusi label yang sama.
    - **Uptime check** (Synthetic Monitoring) ke `https://$DOMAIN/ready` dari luar. Ini satu-satunya alert yang menangkap VPS mati total.
    - **Contact point**: arahkan notifikasi ke Slack/email/pager.
-   - **Log**: Explore > Loki, `{service_name="chi-go-boilerplate"}`. Klik `trace_id` untuk membuka trace di Tempo.
+   - **Log**: Explore > Loki, `{service_name="newsscore"}`. Klik `trace_id` untuk membuka trace di Tempo.
 
 **Rilis versi baru:**
 

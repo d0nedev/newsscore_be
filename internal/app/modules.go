@@ -1,11 +1,9 @@
 package app
 
 import (
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/config"
-	db "github.com/d0nedev/chi_go_boilerplate/internal/platform/database/sqlc"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/middleware"
-	"github.com/d0nedev/chi_go_boilerplate/internal/product"
 	"log/slog"
+
+	"github.com/d0nedev/newsscore/internal/platform/config"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,14 +18,5 @@ func modules(
 	pool *pgxpool.Pool,
 	tp trace.TracerProvider,
 ) []func(chi.Router) {
-	queries := db.New(pool)
-	requireAPIKey := middleware.APIKey(cfg.Auth.APIKeys)
-
-	products := product.NewHandler(
-		product.NewService(queries, tp.Tracer("product")),
-	)
-
-	return []func(chi.Router){
-		func(r chi.Router) { product.RegisterRoutes(r, products, logger, requireAPIKey) },
-	}
+	return nil
 }

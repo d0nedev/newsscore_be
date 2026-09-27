@@ -3,8 +3,8 @@ package middleware
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/apperror"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/httpx"
+	"github.com/d0nedev/newsscore/internal/platform/apperror"
+	"github.com/d0nedev/newsscore/internal/platform/httpx"
 	"net/http"
 )
 

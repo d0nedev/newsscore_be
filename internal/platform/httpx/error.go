@@ -3,7 +3,7 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/apperror"
+	"github.com/d0nedev/newsscore/internal/platform/apperror"
 	"net/http"
 )
 

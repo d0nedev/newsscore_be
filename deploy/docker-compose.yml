@@ -2,7 +2,7 @@
 #   docker compose up -d --build
 # Metrics, traces and logs go to Grafana Cloud; nothing observability-related is
 # stored here, so alerts keep working when this VPS is down.
-name: chi-go-boilerplate-prod
+name: newsscore-prod
 
 x-logging: &logging
   driver: json-file
@@ -42,10 +42,10 @@ services:
       context: ..
       args:
         VERSION: ${VERSION:-dev}
-    image: chi-go-boilerplate:${VERSION:-dev}
+    image: newsscore:${VERSION:-dev}
     restart: unless-stopped
     environment:
-      APP_SERVICE_NAME: chi-go-boilerplate
+      APP_SERVICE_NAME: newsscore
       APP_PORT: "8080"
       APP_ENV: production
       APP_SHUTDOWN_DRAIN_DELAY: 2s
@@ -71,7 +71,7 @@ services:
     mem_limit: 512m
     stop_grace_period: 20s
     labels:
-      service: chi-go-boilerplate
+      service: newsscore
     logging: *logging
     depends_on:
       migrate:

@@ -8,10 +8,63 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Product struct {
-	ID        pgtype.UUID
-	Name      string
-	Price     pgtype.Numeric
-	CreatedAt pgtype.Timestamptz
+type Match struct {
+	ID           pgtype.UUID
+	FlashscoreID string
+	Season       int16
+	HomeTeamID   pgtype.UUID
+	AwayTeamID   pgtype.UUID
+	Status       string
+	MatchTime    pgtype.Timestamptz
+	HomeScore    pgtype.Int2
+	AwayScore    pgtype.Int2
+	DataAsOf     pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type MatchEvent struct {
+	ID           pgtype.UUID
+	MatchID      pgtype.UUID
+	FlashscoreID string
+	Type         string
+	Minute       string
+	PlayerName   string
+	TeamID       pgtype.UUID
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type MatchStatistic struct {
+	MatchID   pgtype.UUID
+	Stats     []byte
 	UpdatedAt pgtype.Timestamptz
+}
+
+type Player struct {
+	ID           pgtype.UUID
+	FlashscoreID string
+	TeamID       pgtype.UUID
+	Name         string
+	AvatarUrl    pgtype.Text
+	Position     pgtype.Text
+	Nationality  pgtype.Text
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type Standing struct {
+	Season    int16
+	TeamID    pgtype.UUID
+	Rank      int16
+	Points    int16
+	Form      pgtype.Text
+	Zone      pgtype.Text
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Team struct {
+	ID           pgtype.UUID
+	FlashscoreID string
+	Name         string
+	ShortName    string
+	LogoUrl      pgtype.Text
+	UpdatedAt    pgtype.Timestamptz
 }

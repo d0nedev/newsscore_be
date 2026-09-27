@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: chi-go-boilerplate
+  title: newsscore
   version: 1.0.0
   description: |
-    Product catalog API.
+    NewsScore API: skor langsung dan berita sepak bola.
 
     All errors use the `Error` schema. Every response carries an `X-Request-ID`
     header (client-supplied if it matches `^[A-Za-z0-9._-]{1,64}$`, otherwise generated).
@@ -13,117 +13,12 @@ servers:
     description: Local
 
 tags:
-  - name: products
-    description: Product catalog. Writes require an API key.
   - name: health
     description: Liveness and readiness probes for orchestrators and load balancers.
 
 security: []
 
 paths:
-  /api/v1/products:
-    get:
-      tags: [products]
-      operationId: listProducts
-      summary: List products, newest first (keyset pagination)
-      parameters:
-        - name: limit
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-        - name: cursor
-          in: query
-          description: Opaque `next_cursor` from the previous page.
-          schema: { type: string }
-      responses:
-        "200":
-          description: A page of products
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ProductList" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "429": { $ref: "#/components/responses/TooManyRequests" }
-        "500": { $ref: "#/components/responses/InternalError" }
-    post:
-      tags: [products]
-      operationId: createProduct
-      summary: Create a product
-      security:
-        - apiKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ProductRequest" }
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Product" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "413": { $ref: "#/components/responses/PayloadTooLarge" }
-        "429": { $ref: "#/components/responses/TooManyRequests" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-  /api/v1/products/{id}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, format: uuid }
-    get:
-      tags: [products]
-      operationId: getProduct
-      summary: Get a product
-      responses:
-        "200":
-          description: The product
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Product" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "429": { $ref: "#/components/responses/TooManyRequests" }
-        "500": { $ref: "#/components/responses/InternalError" }
-    put:
-      tags: [products]
-      operationId: updateProduct
-      summary: Replace a product's name and price
-      security:
-        - apiKey: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ProductRequest" }
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Product" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "413": { $ref: "#/components/responses/PayloadTooLarge" }
-        "429": { $ref: "#/components/responses/TooManyRequests" }
-        "500": { $ref: "#/components/responses/InternalError" }
-    delete:
-      tags: [products]
-      operationId: deleteProduct
-      summary: Delete a product
-      security:
-        - apiKey: []
-      responses:
-        "204":
-          description: Deleted
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "429": { $ref: "#/components/responses/TooManyRequests" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
   /health:
     get:
       tags: [health]
@@ -162,43 +57,6 @@ components:
       description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
-    ProductRequest:
-      type: object
-      additionalProperties: false
-      required: [name, price]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 255
-          description: Trimmed before storage; must not be blank.
-        price:
-          type: string
-          pattern: '^\d{1,13}(\.\d{1,2})?$'
-          description: Non-negative decimal string, at most 2 decimal places (NUMERIC(15,2)).
-          examples: ["13000000.00"]
-
-    Product:
-      type: object
-      required: [id, name, price, created_at, updated_at]
-      properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-        price: { type: string, examples: ["13000000.00"] }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-
-    ProductList:
-      type: object
-      required: [data, next_cursor]
-      properties:
-        data:
-          type: array
-          items: { $ref: "#/components/schemas/Product" }
-        next_cursor:
-          type: [string, "null"]
-          description: Pass as `cursor` to fetch the next page; null on the last page.
-
     ProbeStatus:
       type: object
       required: [status]
@@ -217,13 +75,13 @@ components:
           properties:
             code:
               type: string
-              examples: [VALIDATION_ERROR, PRODUCT_NOT_FOUND, RATE_LIMITED]
+              examples: [VALIDATION_ERROR, NOT_FOUND, RATE_LIMITED]
             message:
               type: string
 
   responses:
     BadRequest:
-      description: "Invalid input (`VALIDATION_ERROR`, `INVALID_PRODUCT_PRICE`, `CLIENT_IP_UNRESOLVED`)"
+      description: "Invalid input (`VALIDATION_ERROR`, `CLIENT_IP_UNRESOLVED`)"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -233,7 +91,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
-      description: "`PRODUCT_NOT_FOUND`"
+      description: "`NOT_FOUND`"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -248,7 +106,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     InternalError:
-      description: "Unexpected failure (`INTERNAL_SERVER_ERROR`, `PRODUCT_*_FAILED`)"
+      description: "Unexpected failure (`INTERNAL_SERVER_ERROR`)"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

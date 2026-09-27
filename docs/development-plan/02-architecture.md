@@ -4,9 +4,9 @@
 
 ```
                     ┌──────────────────────────────┐
-                    │         SportMonks           │
+                    │   Flashscore (feed publik)   │
                     └──────────────┬───────────────┘
-                                   │ HTTP, terjadwal
+                                   │ HTTP scrape, terjadwal
                                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  ingestor (Go)                                              │
@@ -27,14 +27,11 @@
 └───────────────────────────┬──────────────────────────────┘
                             │ HTTP + SSE
                             ▼
-              ┌──────────────────────────────┐
-              │  web (Nuxt 4, SSR)           │
-              └──────────────┬───────────────┘
-                             ▼
-                         Peramban
+                     Klien (frontend terpisah)
 ```
 
-Dua binary Go terpisah, satu basis data, satu Redis, satu aplikasi web.
+Dua binary Go terpisah, satu basis data, satu Redis. Frontend di luar lingkup
+dokumen ini.
 
 ## 2. Keputusan arsitektur
 
@@ -53,25 +50,26 @@ mengelola dua unit. Keduanya dapat diterima.
 
 ### 2.2 PostgreSQL sebagai sumber kebenaran, bukan cache belaka
 
-**Keputusan.** Seluruh data dari SportMonks disimpan permanen di PostgreSQL.
+**Keputusan.** Seluruh data dari Flashscore disimpan permanen di PostgreSQL.
 
 **Alasan.** Tiga hal menuntutnya. Berita perlu ditautkan ke pertandingan dan
 klub, sehingga entitas itu harus ada sebagai baris yang bisa direferensikan.
-Halaman harus tetap tersaji ketika SportMonks terganggu. Dan data historis
-menjadi milik klien, bukan sekadar titipan yang hilang saat langganan berakhir.
+Halaman harus tetap tersaji ketika Flashscore memblokir atau mengubah format. Dan data historis
+tidak perlu di-scrape ulang, yang justru memperbesar risiko diblokir.
 
 **Konsekuensi.** Kebutuhan penyimpanan bertambah dan ada pekerjaan migrasi
-skema. Sebagai imbalan, ketergantungan operasional pada SportMonks berkurang
+skema. Sebagai imbalan, ketergantungan operasional pada Flashscore berkurang
 drastis.
 
-### 2.3 Anti-corruption layer terhadap SportMonks
+### 2.3 Anti-corruption layer terhadap penyedia
 
-**Keputusan.** Struktur data SportMonks tidak pernah menembus keluar dari
-paket `internal/provider/sportmonks`. Di batas paket, ia diterjemahkan ke
+**Keputusan.** Format feed Flashscore (`¬~`, `¬`, `÷`, kode key seperti `AA`,
+`AE`) tidak pernah menembus keluar dari paket `internal/provider/flashscore`. Di batas paket, ia diterjemahkan ke
 model domain milik sendiri.
 
-**Alasan.** Penyedia data bisa mengubah struktur respons, dan pada akhirnya
-bisa diganti seluruhnya. Kalau bentuk mereka bocor ke seluruh basis kode,
+**Alasan.** Feed scraping tidak punya kontrak: key, header `x-fsign`, dan
+regex ekstraksi bisa berubah tanpa pemberitahuan, dan penyedia mungkin harus
+diganti seluruhnya (`internal/provider/sofascore` sudah ada sebagai cadangan). Kalau bentuk mereka bocor ke seluruh basis kode,
 setiap perubahan menjadi pekerjaan besar dan penggantian penyedia menjadi
 mustahil.
 
@@ -102,22 +100,12 @@ untuk klasemen serta statistik. ORM menyembunyikan SQL yang dihasilkan tepat
 pada titik di mana SQL itu paling perlu dikendalikan. sqlc memberi tipe yang
 aman tanpa menyembunyikan apa pun, dan kesalahan kueri terdeteksi saat kompilasi.
 
-### 2.6 Nuxt dengan SSR, bukan Vue SPA
-
-**Keputusan.** Frontend memakai Nuxt 4 dengan rendering di server.
-
-**Alasan.** Pertumbuhan bergantung pada pencarian Google. SPA murni menyerahkan
-pengindeksan pada rendering JavaScript oleh mesin pencari, yang lambat dan tidak
-dapat diandalkan untuk konten yang berubah setiap menit. SSR juga memperbaiki
-LCP secara langsung pada perangkat lemah, karena peramban menerima HTML jadi
-alih-alih harus mengeksekusi JavaScript lebih dulu.
-
 ## 3. Alur data
 
 ### 3.1 Pertandingan tidak berlangsung
 
 ```
-Peramban → Nuxt (SSR) → API → Redis (hit) → HTML
+Klien → API → Redis (hit) → JSON
 ```
 
 Sebagian besar permintaan berhenti di Redis. PostgreSQL hanya tersentuh saat
@@ -126,17 +114,17 @@ cache meleset.
 ### 3.2 Pertandingan berlangsung
 
 ```
-Ingestor ──20 detik──► SportMonks
+Ingestor ──20 detik──► Flashscore
     │
     ├─► deteksi perubahan ─► simpan ke PostgreSQL
     │
     └─► publish ke Redis ─► SSE hub ─► seluruh klien terhubung
 ```
 
-Klien menerima muatan awal saat SSR, lalu hanya menerima selisihnya lewat SSE.
+Klien menerima muatan awal lewat REST, lalu hanya menerima selisihnya lewat SSE.
 Halaman tidak pernah memuat ulang dirinya.
 
-### 3.3 Ketika SportMonks terganggu
+### 3.3 Ketika Flashscore terganggu atau memblokir
 
 Tiga lapis penurunan bertingkat:
 
@@ -165,11 +153,13 @@ semuanya. Inilah alasan keputusan 2.2 penting.
 Dua pola yang wajib diterapkan:
 
 **Stale-while-revalidate.** Permintaan selalu dijawab dari cache; penyegaran
-berjalan di latar belakang. Pengguna tidak pernah menunggu SportMonks.
+berjalan di latar belakang. Pengguna tidak pernah menunggu Flashscore.
 
 **Single-flight.** Ketika cache kedaluwarsa dan seratus permintaan datang
 bersamaan, hanya satu yang menembus ke hulu. Sisanya menunggu hasil yang sama.
-Tanpa ini, kuota SportMonks habis pada pekan pertama pertandingan besar.
+Tanpa ini, lonjakan permintaan berubah jadi lonjakan scrape dan IP server
+diblokir Cloudflare. API tidak pernah memanggil Flashscore langsung; hanya
+ingestor yang boleh.
 
 ## 5. Deployment
 
@@ -178,7 +168,6 @@ HTTP/2 aktif.
 
 ```
 caddy      → 80, 443
-web        → Nuxt, mode node-server
 api        → binary Go
 ingestor   → binary Go
 postgres   → volume persisten
@@ -199,10 +188,10 @@ menghasilkan event berlipat.
 - **Log terstruktur** dengan `log/slog` dalam format JSON, membawa `request_id`
   yang juga dikembalikan ke klien lewat header agar keluhan pengguna dapat
   ditelusuri.
-- **Sentry** pada API, ingestor, dan frontend.
+- **Sentry** pada API dan ingestor.
 - **Endpoint kesehatan** `/healthz` untuk liveness dan `/readyz` yang memeriksa
   PostgreSQL dan Redis.
-- **Metrik yang dipantau**: rasio cache hit, tingkat galat SportMonks, jumlah
+- **Metrik yang dipantau**: rasio cache hit, tingkat galat scrape (403, respons kosong, gagal parse), jumlah
   koneksi SSE aktif, jeda ingestion, dan latensi persentil ke-95.
 - **Peringatan otomatis** ke Telegram untuk: tingkat galat hulu melonjak, rasio
   cache hit turun di bawah 85 persen, ingestion berhenti lebih dari 2 menit saat

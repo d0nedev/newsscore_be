@@ -3,20 +3,20 @@ groups:
   - name: service
     rules:
       - record: service:http_requests:rate5m
-        expr: sum(rate(http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate"}[5m]))
+        expr: sum(rate(http_server_request_duration_seconds_count{exported_job="newsscore"}[5m]))
 
       - record: service:http_errors_5xx:rate5m
-        expr: sum(rate(http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate",http_response_status_code=~"5.."}[5m]))
+        expr: sum(rate(http_server_request_duration_seconds_count{exported_job="newsscore",http_response_status_code=~"5.."}[5m]))
 
       - record: service:http_latency_p95:5m
-        expr: histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{exported_job="chi-go-boilerplate",http_route!=""}[5m])))
+        expr: histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket{exported_job="newsscore",http_route!=""}[5m])))
 
       # Availability SLO 99.9%: page when the 5xx ratio burns the monthly budget ~14x faster than allowed.
       - alert: ServiceHighErrorRate
         expr: (service:http_errors_5xx:rate5m / service:http_requests:rate5m) > 0.014 and service:http_requests:rate5m > 0.1
         for: 5m
         labels:
-          service: chi-go-boilerplate
+          service: newsscore
           severity: page
         annotations:
           summary: "5xx ratio {{ $value | humanizePercentage }} (SLO 99.9%)"
@@ -27,7 +27,7 @@ groups:
         expr: service:http_latency_p95:5m > 0.3
         for: 10m
         labels:
-          service: chi-go-boilerplate
+          service: newsscore
           severity: ticket
         annotations:
           summary: "p95 latency {{ $value | humanizeDuration }} on {{ $labels.http_route }}"
@@ -35,30 +35,30 @@ groups:
 
       # Requests wait for a connection once the pool is full; latency and timeouts follow.
       - alert: ServiceDatabasePoolSaturated
-        expr: max by (exported_instance) (pgxpool_acquired_connections{exported_job="chi-go-boilerplate"} / pgxpool_max_connections{exported_job="chi-go-boilerplate"}) >= 0.9
+        expr: max by (exported_instance) (pgxpool_acquired_connections{exported_job="newsscore"} / pgxpool_max_connections{exported_job="newsscore"}) >= 0.9
         for: 5m
         labels:
-          service: chi-go-boilerplate
+          service: newsscore
           severity: ticket
         annotations:
           summary: "DB pool {{ $value | humanizePercentage }} used on {{ $labels.exported_instance }}"
           runbook: docs/runbook.md#servicedatabasepoolsaturated
 
       - alert: ServiceNoTraffic
-        expr: absent_over_time(http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate"}[15m])
+        expr: absent_over_time(http_server_request_duration_seconds_count{exported_job="newsscore"}[15m])
         for: 5m
         labels:
-          service: chi-go-boilerplate
+          service: newsscore
           severity: ticket
         annotations:
-          summary: "No request metrics from chi-go-boilerplate for 15m (app down or telemetry broken)"
+          summary: "No request metrics from newsscore for 15m (app down or telemetry broken)"
           runbook: docs/runbook.md#servicenotraffic
 
       - alert: ServiceTelemetryPipelineDown
         expr: up{job="otel-collector"} == 0
         for: 5m
         labels:
-          service: chi-go-boilerplate
+          service: newsscore
           severity: ticket
         annotations:
           summary: "Prometheus cannot scrape the OTel collector; all app alerts are blind"

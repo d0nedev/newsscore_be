@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"errors"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/apperror"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/httpx"
+	"github.com/d0nedev/newsscore/internal/platform/apperror"
+	"github.com/d0nedev/newsscore/internal/platform/httpx"
 	"net"
 	"net/http"
 	"net/netip"

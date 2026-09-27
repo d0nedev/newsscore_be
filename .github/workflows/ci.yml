@@ -50,16 +50,16 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: chi_go_boilerplate
+          POSTGRES_DB: newsscore
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d chi_go_boilerplate"
+          --health-cmd "pg_isready -U postgres -d newsscore"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 15
     env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/chi_go_boilerplate?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/newsscore?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -84,8 +84,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: build
-        run: docker build --build-arg VERSION=${{ github.sha }} -t chi-go-boilerplate:${{ github.sha }} .
+        run: docker build --build-arg VERSION=${{ github.sha }} -t newsscore:${{ github.sha }} .
       - name: scan
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.66.0 \
-            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed chi-go-boilerplate:${{ github.sha }}
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed newsscore:${{ github.sha }}

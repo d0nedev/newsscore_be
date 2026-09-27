@@ -28,9 +28,11 @@ Tiga sasaran yang menentukan hampir semua keputusan teknis di dokumen ini:
 | [`01-product-brief.md`](01-product-brief.md) | Sasaran produk, pengguna, pembeda dari SofaScore, lingkup MVP, dan yang sengaja tidak dikerjakan |
 | [`02-architecture.md`](02-architecture.md) | Arsitektur sistem, alur data, keputusan teknis beserta alasannya |
 | [`03-backend-go.md`](03-backend-go.md) | Struktur proyek Go, skema basis data, kontrak API, ingestion, caching |
-| [`04-frontend-vue.md`](04-frontend-vue.md) | Struktur Nuxt/Vue, routing, strategi rendering, anggaran performa, SEO |
-| [`05-design-direction.md`](05-design-direction.md) | Arah visual, token desain, dan alasan menjauh dari tampilan SofaScore |
 | [`06-delivery-plan.md`](06-delivery-plan.md) | Fase pengerjaan, milestone, definition of done, risiko |
+| [`api-contract-plan.md`](api-contract-plan.md) | Kontrak API `/api/v1` (acuan utama bila bertentangan dengan 03) |
+| [`backend-handler-service.md`](backend-handler-service.md) | Aturan handler dan service |
+| [`postgres-schema-plan.md`](postgres-schema-plan.md) | Skema PostgreSQL |
+| [`../files/07-scraping-flashscore.md`](../files/07-scraping-flashscore.md) | Teknik scraping Flashscore |
 
 ## Ringkasan stack
 
@@ -39,15 +41,15 @@ Tiga sasaran yang menentukan hampir semua keputusan teknis di dokumen ini:
 | Backend | Go 1.23, chi, pgx, sqlc |
 | Basis data | PostgreSQL 16 |
 | Cache & pub/sub | Redis 7 |
-| Frontend | Nuxt 4 (Vue 3), TypeScript, Tailwind CSS v4 |
-| Sumber data | SportMonks |
+| Sumber data | Flashscore (scraping), SofaScore sebagai cadangan |
 | Realtime | Server-Sent Events |
 | Deployment | Docker Compose di VPS, Caddy sebagai reverse proxy |
 
 ## Catatan perubahan dari rencana awal
 
 Rencana sebelumnya (QUO-2026-002) menggunakan Nuxt sebagai lapisan tunggal
-dengan Cloudflare Workers sebagai proxy ke SportMonks. Pendekatan itu memadai
+dengan Cloudflare Workers sebagai proxy ke SportMonks. Sumber data kini
+diganti ke scraping Flashscore. Pendekatan itu memadai
 untuk MVP baca-saja, tetapi tidak lagi cocok setelah ada tiga kebutuhan:
 ingestion yang berjalan terus-menerus, deteksi perubahan skor sebagai sumber
 event, dan CMS berita dengan basis data sendiri. Workers dirancang untuk
@@ -60,6 +62,6 @@ runtime berbasis JVM atau Node dengan kebutuhan memori serupa.
 
 Konsekuensinya perlu disampaikan sejak awal: **ini pekerjaan yang jauh lebih
 besar daripada MVP empat pekan di QUO-2026-002.** Estimasi di
-[`06-delivery-plan.md`](06-delivery-plan.md) berada di kisaran 13 pekan.
+[`06-delivery-plan.md`](06-delivery-plan.md) berada di kisaran 9 pekan untuk backend.
 Kalau anggaran klien masih mengacu pada penawaran lama, perbedaan ini harus
 dibicarakan sebelum baris kode pertama ditulis.

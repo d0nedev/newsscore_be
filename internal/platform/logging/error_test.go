@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/apperror"
+	"github.com/d0nedev/newsscore/internal/platform/apperror"
 )
 
 func TestLogErrorLevelByStatus(t *testing.T) {

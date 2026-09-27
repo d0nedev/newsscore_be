@@ -96,8 +96,10 @@ Ditulis eksplisit karena berkonsekuensi hukum:
 - Tidak mereplikasi fitur berhak milik mereka seperti sistem rating pemain atau
   grafik momentum serangan. Kalau dibutuhkan metrik sejenis, rancang sendiri
   dengan metodologi yang dipublikasikan terbuka.
-- Tidak melakukan scraping terhadap SofaScore maupun situs mana pun. Seluruh
-  data berasal dari SportMonks yang berlisensi.
+- Data pertandingan diambil dari feed publik Flashscore (lihat
+  [`07-scraping-flashscore.md`](../files/07-scraping-flashscore.md)). Tidak
+  berlisensi: status hukum dan ketentuan layanan Flashscore wajib dikaji
+  sebelum peluncuran, dan arsitektur harus siap berganti penyedia.
 - Tidak menampilkan odds, prediksi berbayar, maupun tautan ke situs taruhan.
 
 ## 4. Lingkup MVP

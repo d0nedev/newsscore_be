@@ -1,4 +1,4 @@
-module github.com/d0nedev/chi_go_boilerplate
+module github.com/d0nedev/newsscore
 
 go 1.27.1
 

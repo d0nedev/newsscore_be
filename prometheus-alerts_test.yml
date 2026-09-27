@@ -5,23 +5,23 @@ evaluation_interval: 1m
 tests:
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{exported_job="newsscore",http_response_status_code="200"}'
         values: '0+100x20'
-      - series: 'http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate",http_response_status_code="500"}'
+      - series: 'http_server_request_duration_seconds_count{exported_job="newsscore",http_response_status_code="500"}'
         values: '0+5x20'
     alert_rule_test:
       - eval_time: 12m
         alertname: ServiceHighErrorRate
         exp_alerts:
-          - exp_labels: { severity: page, service: chi-go-boilerplate }
+          - exp_labels: { severity: page, service: newsscore }
             exp_annotations:
               summary: "5xx ratio 4.762% (SLO 99.9%)"
               runbook: docs/runbook.md#servicehigherrorrate
   - interval: 1m
     input_series:
-      - series: 'http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{exported_job="newsscore",http_response_status_code="200"}'
         values: '0+100x20'
-      - series: 'http_server_request_duration_seconds_count{exported_job="chi-go-boilerplate",http_response_status_code="500"}'
+      - series: 'http_server_request_duration_seconds_count{exported_job="newsscore",http_response_status_code="500"}'
         values: '0+0x20'
     alert_rule_test:
       - eval_time: 12m
@@ -29,19 +29,19 @@ tests:
         exp_alerts: []
   - interval: 1m
     input_series:
-      - series: 'pgxpool_acquired_connections{exported_job="chi-go-boilerplate",exported_instance="pod-a"}'
+      - series: 'pgxpool_acquired_connections{exported_job="newsscore",exported_instance="pod-a"}'
         values: '10x10'
-      - series: 'pgxpool_max_connections{exported_job="chi-go-boilerplate",exported_instance="pod-a"}'
+      - series: 'pgxpool_max_connections{exported_job="newsscore",exported_instance="pod-a"}'
         values: '10x10'
-      - series: 'pgxpool_acquired_connections{exported_job="chi-go-boilerplate",exported_instance="pod-b"}'
+      - series: 'pgxpool_acquired_connections{exported_job="newsscore",exported_instance="pod-b"}'
         values: '2x10'
-      - series: 'pgxpool_max_connections{exported_job="chi-go-boilerplate",exported_instance="pod-b"}'
+      - series: 'pgxpool_max_connections{exported_job="newsscore",exported_instance="pod-b"}'
         values: '10x10'
     alert_rule_test:
       - eval_time: 6m
         alertname: ServiceDatabasePoolSaturated
         exp_alerts:
-          - exp_labels: { severity: ticket, service: chi-go-boilerplate, exported_instance: pod-a }
+          - exp_labels: { severity: ticket, service: newsscore, exported_instance: pod-a }
             exp_annotations:
               summary: "DB pool 100% used on pod-a"
               runbook: docs/runbook.md#servicedatabasepoolsaturated

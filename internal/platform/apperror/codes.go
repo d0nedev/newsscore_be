@@ -2,7 +2,7 @@ package apperror
 
 // Error codes shared by every domain. They are part of the API contract
 // (see openapi.yaml): changing a value is a breaking change for clients.
-// Domain-specific codes live in their own package, e.g. product/errors.go.
+// Domain-specific codes live in their own package, e.g. <domain>/errors.go.
 const (
 	CodeValidation          = "VALIDATION_ERROR"
 	CodeInternal            = "INTERNAL_SERVER_ERROR"

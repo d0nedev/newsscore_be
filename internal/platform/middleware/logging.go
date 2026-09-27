@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/logging"
+	"github.com/d0nedev/newsscore/internal/platform/logging"
 	"io"
 	"log/slog"
 	"net/http"

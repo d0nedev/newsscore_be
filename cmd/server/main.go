@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/d0nedev/chi_go_boilerplate/internal/app"
+	"github.com/d0nedev/newsscore/internal/app"
 	"log/slog"
 	"net/http"
 	"os"

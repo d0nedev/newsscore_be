@@ -4,13 +4,13 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: chi_go_boilerplate
+      POSTGRES_DB: newsscore
     ports:
       - "55432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d chi_go_boilerplate"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d newsscore"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -21,7 +21,7 @@ services:
       - ./db/migrations:/migrations:ro
     command:
       - -path=/migrations
-      - -database=postgres://postgres:postgres@postgres:5432/chi_go_boilerplate?sslmode=disable
+      - -database=postgres://postgres:postgres@postgres:5432/newsscore?sslmode=disable
       - up
     depends_on:
       postgres:
@@ -32,7 +32,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      APP_SERVICE_NAME: chi-go-boilerplate
+      APP_SERVICE_NAME: newsscore
       APP_PORT: "8080"
       APP_ENV: development
       APP_SHUTDOWN_DRAIN_DELAY: 1s
@@ -41,7 +41,7 @@ services:
       DB_PORT: "5432"
       DB_USER: postgres
       DB_PASSWORD: postgres
-      DB_NAME: chi_go_boilerplate
+      DB_NAME: newsscore
       DB_SSL_MODE: disable
       DB_MAX_CONNS: "10"
       DB_MIN_CONNS: "2"

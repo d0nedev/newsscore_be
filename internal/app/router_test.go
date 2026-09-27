@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/config"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/health"
+	"github.com/d0nedev/newsscore/internal/platform/config"
+	"github.com/d0nedev/newsscore/internal/platform/health"
 
-	"go.opentelemetry.io/otel/trace/noop"
+	"github.com/go-chi/chi/v5"
 )
 
 func testRouter(t *testing.T, logs *bytes.Buffer) (http.Handler, *health.Handler) {
@@ -26,9 +26,12 @@ func testRouter(t *testing.T, logs *bytes.Buffer) (http.Handler, *health.Handler
 
 	// Requests in these tests never reach the database, so a nil pool is enough.
 	probes := health.NewHandler(nil)
-	routes := modules(cfg, logger, nil, noop.NewTracerProvider())
+	// Stub route: modules has no domains yet, and chi skips middleware on an empty subrouter.
+	ping := func(r chi.Router) {
+		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	}
 
-	return newRouter(cfg, logger, probes, routes...), probes
+	return newRouter(cfg, logger, probes, ping), probes
 }
 
 func serve(h http.Handler, method, path string, header http.Header) *httptest.ResponseRecorder {
@@ -51,9 +54,8 @@ func TestRouterErrorsAreJSON(t *testing.T) {
 		code         string
 	}{
 		{http.MethodGet, "/nope", http.StatusNotFound, "NOT_FOUND"},
-		{http.MethodPatch, "/api/v1/products/", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
-		{http.MethodPost, "/api/v1/products/", http.StatusUnauthorized, "UNAUTHORIZED"},
-		{http.MethodGet, "/api/v1/products/not-a-uuid", http.StatusBadRequest, "VALIDATION_ERROR"},
+		{http.MethodGet, "/api/v1/nope", http.StatusNotFound, "NOT_FOUND"},
+		{http.MethodPost, "/health", http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED"},
 	}
 
 	for _, tt := range tests {
@@ -89,9 +91,9 @@ func TestRouterRateLimitsAPIButNotProbes(t *testing.T) {
 	h, _ := testRouter(t, &bytes.Buffer{})
 
 	for range 3 {
-		serve(h, http.MethodGet, "/api/v1/products/not-a-uuid", nil)
+		serve(h, http.MethodGet, "/api/v1/ping", nil)
 	}
-	if rec := serve(h, http.MethodGet, "/api/v1/products/not-a-uuid", nil); rec.Code != http.StatusTooManyRequests {
+	if rec := serve(h, http.MethodGet, "/api/v1/ping", nil); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("4th API request: %d", rec.Code)
 	}
 	for range 5 {

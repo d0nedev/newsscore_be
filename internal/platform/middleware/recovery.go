@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/httpx"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/logging"
-	"github.com/d0nedev/chi_go_boilerplate/internal/platform/tracing"
+	"github.com/d0nedev/newsscore/internal/platform/httpx"
+	"github.com/d0nedev/newsscore/internal/platform/logging"
+	"github.com/d0nedev/newsscore/internal/platform/tracing"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
