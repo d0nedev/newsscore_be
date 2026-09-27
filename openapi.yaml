@@ -19,6 +19,8 @@ tags:
     description: Berita. `/admin/news` needs a session with the admin role.
   - name: standings
     description: League table, computed from finished matches.
+  - name: teams
+    description: Team and player pages, from lineups and incidents of the latest season.
   - name: matches
     description: Pertandingan sepak bola. Tanggal dalam zona WIB.
   - name: health
@@ -276,6 +278,48 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /api/v1/teams/{id}:
+    get:
+      tags: [teams]
+      operationId: getTeam
+      summary: Team profile, squad with season numbers, last 5 and next 5 matches
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/TeamProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/players/{id}:
+    get:
+      tags: [teams]
+      operationId: getPlayer
+      summary: Player profile, season totals, and match log (newest first)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/PlayerProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /api/v1/matches:
     get:
       tags: [matches]
@@ -387,6 +431,76 @@ components:
       description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
+    TeamProfile:
+      type: object
+      required: [id, name, badge, season, squad, recentMatches, upcomingMatches]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        badge: { type: string }
+        logo: { type: string, format: uri }
+        season: { type: integer }
+        squad:
+          type: array
+          items:
+            type: object
+            required: [id, name, matches, goals, assists]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              number: { type: integer }
+              position: { type: string, description: 'Only "GK" is known from the source' }
+              nationality: { type: string }
+              matches: { type: integer, description: Starts plus substitute appearances }
+              goals: { type: integer }
+              assists: { type: integer }
+        recentMatches: { type: array, items: { $ref: "#/components/schemas/Match" } }
+        upcomingMatches: { type: array, items: { $ref: "#/components/schemas/Match" } }
+
+    PlayerProfile:
+      type: object
+      required: [id, name, team, season, matchLog]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        number: { type: integer }
+        position: { type: string }
+        country: { type: string }
+        team:
+          type: [object, "null"]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            badge: { type: string }
+            logo: { type: string }
+        season:
+          type: object
+          properties:
+            season: { type: integer }
+            matches: { type: integer }
+            starts: { type: integer }
+            goals: { type: integer }
+            assists: { type: integer }
+            yellow: { type: integer }
+            red: { type: integer }
+        matchLog:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, description: DD.MM.YYYY (WIB) }
+              matchId: { type: string, format: uuid }
+              home: { type: string }
+              away: { type: string }
+              score: { type: [array, "null"], items: { type: integer } }
+              outcome: { type: string, enum: [W, D, L, ""] }
+              started: { type: boolean }
+              played: { type: boolean, description: false when on the bench and never came on }
+              goals: { type: integer }
+              assists: { type: integer }
+              yellow: { type: integer }
+              red: { type: integer }
+
     StandingRow:
       type: object
       required: [position, teamId, team, badge, played, won, drawn, lost, goalsFor, goalsAgainst, points, form]
@@ -477,6 +591,15 @@ components:
         badge: { type: string, description: 'Kode singkat, mis. "PER"' }
         logo: { type: string, format: uri }
 
+    LineupPlayer:
+      type: object
+      required: [playerId, name, starter]
+      properties:
+        playerId: { type: string, format: uuid }
+        name: { type: string }
+        number: { type: integer }
+        starter: { type: boolean }
+
     Match:
       type: object
       required: [id, status, time, date, home, away, score]
@@ -522,7 +645,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/Match"
         - type: object
-          required: [events, stats]
+          required: [events, stats, lineups]
           properties:
             events:
               type: array
@@ -534,6 +657,13 @@ components:
                   team: { type: string, enum: [home, away, ""] }
                   type: { type: string, description: "goal, yellow, red, sub, atau jenis mentah dari sumber" }
                   player: { type: string }
+                  assist: { type: string, description: Goals only }
+                  note: { type: string, description: 'Substitutions: "Keluar: <player>"' }
+            lineups:
+              type: object
+              properties:
+                home: { type: array, items: { $ref: "#/components/schemas/LineupPlayer" } }
+                away: { type: array, items: { $ref: "#/components/schemas/LineupPlayer" } }
             stats:
               type: array
               items:

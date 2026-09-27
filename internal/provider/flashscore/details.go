@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,32 +20,40 @@ func SetFSign(v string) {
 }
 
 func fetchFeed(feedType, matchID string) ([]map[string]string, error) {
+	body, err := fetchBody(feedType, matchID)
+	if err != nil {
+		return nil, err
+	}
+	return parseRecords(body), nil
+}
+
+func fetchBody(feedType, matchID string) (string, error) {
 	// Add delay to prevent IP blocking
 	time.Sleep(1 * time.Second)
 
 	url := fmt.Sprintf("https://www.flashscore.com/x/feed/%s_%s", feedType, matchID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 	req.Header.Set("x-fsign", fsign)
 
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected status %d", res.StatusCode)
+		return "", fmt.Errorf("unexpected status %d", res.StatusCode)
 	}
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return parseRecords(string(body)), nil
+	return string(body), nil
 }
 
 type MatchEvent struct {
@@ -52,8 +61,11 @@ type MatchEvent struct {
 	PlayerName string
 	PlayerID   string
 	Minute     string
-	Type       string // e.g., "Goal", "Yellow Card"
+	Type       string // e.g. "Goal", "Penalty", "Yellow Card", "Substitution"
 	Team       int    // 1 (Home) or 2 (Away)
+	// Related is the assist on a goal or the player leaving on a substitution.
+	RelatedName string
+	RelatedID   string
 }
 
 type MatchStat struct {
@@ -66,8 +78,10 @@ type Player struct {
 	FlashscoreID string
 	Name         string
 	Nationality  string
-	ShirtNumber  string
-	Team         int // 1 or 2
+	ShirtNumber  int
+	Team         int  // 1 or 2
+	Starter      bool // false for substitutes
+	Goalkeeper   bool
 }
 
 func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, error) {
@@ -89,28 +103,10 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 	// 2. Events
 	events, eventsErr := ScrapeEvents(matchID)
 
-	// 3. Lineups (Players)
-	lineupsRec, err := fetchFeed("df_li_1", matchID)
+	// 3. Lineups
 	var players []Player
-	if err == nil {
-		currentTeam := 1 // Home usually first
-		for _, m := range lineupsRec {
-			if m["LC"] == "1" {
-				currentTeam = 1
-			} else if m["LC"] == "2" {
-				currentTeam = 2
-			}
-
-			if pid, ok := m["LP"]; ok {
-				players = append(players, Player{
-					FlashscoreID: pid,
-					Name:         m["LI"],
-					Nationality:  m["LQ"],
-					ShirtNumber:  m["LJ"],
-					Team:         currentTeam,
-				})
-			}
-		}
+	if body, err := fetchBody("df_li_1", matchID); err == nil {
+		players = parseLineups(body)
 	}
 
 	// Only fail when nothing usable came back; lineups alone are not worth saving.
@@ -123,29 +119,112 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 
 // ScrapeEvents reads the match incidents feed (goals, cards, substitutions).
 func ScrapeEvents(matchID string) ([]MatchEvent, error) {
-	records, err := fetchFeed("df_sui_1", matchID)
+	body, err := fetchBody("df_sui_1", matchID)
 	if err != nil {
 		return nil, err
 	}
+	return parseIncidents(body), nil
+}
+
+// parseIncidents reads df_sui records. One incident can hold several parts, each
+// starting at an "IE" key: a goal and its assist, a substitution's out and in, or
+// "Penalty Awarded" then the penalty's outcome. A key-value map would keep only
+// the last part, so fields are read in order.
+func parseIncidents(body string) []MatchEvent {
+	type part struct{ kind, name, id string }
 
 	var events []MatchEvent
-	for _, m := range records {
-		if id, ok := m["III"]; ok {
-			team := 1
-			if m["IA"] == "2" {
-				team = 2
+	for _, record := range strings.Split(body, "¬~") {
+		var e MatchEvent
+		var parts []part
+		for _, field := range strings.Split(record, "¬") {
+			k, v, ok := strings.Cut(field, "÷")
+			if !ok {
+				continue
 			}
-			events = append(events, MatchEvent{
-				ID:         id,
-				PlayerName: m["IF"],
-				PlayerID:   m["IM"],
-				Minute:     m["IB"],
-				Type:       m["IK"],
-				Team:       team,
-			})
+			switch k {
+			case "III":
+				e.ID = v
+			case "IA":
+				e.Team = 1
+				if v == "2" {
+					e.Team = 2
+				}
+			case "IB":
+				e.Minute = v
+			case "IE":
+				parts = append(parts, part{})
+			case "IK", "IF", "IM":
+				if len(parts) == 0 {
+					parts = append(parts, part{})
+				}
+				p := &parts[len(parts)-1]
+				switch k {
+				case "IK":
+					p.kind = v
+				case "IF":
+					p.name = v
+				case "IM":
+					p.id = v
+				}
+			}
 		}
+		if e.ID == "" || len(parts) == 0 {
+			continue
+		}
+
+		main, related := parts[0], part{}
+		if len(parts) > 1 {
+			related = parts[1]
+		}
+		switch {
+		case main.kind == "Penalty Awarded" && len(parts) > 1:
+			// The second part is what happened to the penalty; the awarding is noise.
+			main, related = parts[1], part{}
+		case main.kind == "Substitution - Out" && len(parts) > 1:
+			// Report the player coming on, with the one going off as related.
+			main, related = parts[1], parts[0]
+			main.kind = "Substitution"
+		}
+
+		e.Type, e.PlayerName, e.PlayerID = main.kind, main.name, main.id
+		e.RelatedName, e.RelatedID = related.name, related.id
+		events = append(events, e)
 	}
-	return events, nil
+	return events
+}
+
+// parseLineups reads df_li records: "LB" opens a section (Starting Lineups,
+// Substitutes, Coaches), "LC" switches team side, "LP" is a player.
+func parseLineups(body string) []Player {
+	var players []Player
+	section, side := "", 1
+	for _, m := range parseRecords(body) {
+		if v, ok := m["LB"]; ok {
+			section = v
+		}
+		if v, ok := m["LC"]; ok {
+			side = 1
+			if v == "2" {
+				side = 2
+			}
+		}
+		id, ok := m["LP"]
+		if !ok || (section != "Starting Lineups" && section != "Substitutes") {
+			continue
+		}
+		number, _ := strconv.Atoi(m["LJ"])
+		players = append(players, Player{
+			FlashscoreID: id,
+			Name:         m["LI"],
+			Nationality:  m["LQ"],
+			ShirtNumber:  number,
+			Team:         side,
+			Starter:      section == "Starting Lineups",
+			Goalkeeper:   m["LS"] == "Goalkeeper",
+		})
+	}
+	return players
 }
 
 // LiveState is the small "dc_1" core feed: status, stage, and score of one match.

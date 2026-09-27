@@ -10,3 +10,9 @@ Accept: text/event-stream
 
 ### Standings (season defaults to the latest)
 GET http://localhost:8080/api/v1/standings
+
+### Team page
+GET http://localhost:8080/api/v1/teams/00000000-0000-0000-0000-000000000000
+
+### Player page
+GET http://localhost:8080/api/v1/players/00000000-0000-0000-0000-000000000000

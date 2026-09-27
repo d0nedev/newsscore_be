@@ -1,21 +1,34 @@
 -- name: UpsertPlayer :one
-INSERT INTO players (flashscore_id, team_id, name, nationality, updated_at)
-VALUES ($1, $2, $3, $4, now())
+-- Position is only known for goalkeepers (lineup role); never downgrade a known one to NULL.
+INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
-    nationality = EXCLUDED.nationality,
+    nationality = coalesce(EXCLUDED.nationality, players.nationality),
     team_id = EXCLUDED.team_id,
+    shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
+    position = coalesce(EXCLUDED.position, players.position),
     updated_at = now()
 RETURNING id;
 
+-- name: UpsertLineup :exec
+INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (match_id, player_id) DO UPDATE
+SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter;
+
 -- name: UpsertMatchEvent :exec
-INSERT INTO match_events (match_id, flashscore_id, type, minute, player_name, team_id, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO match_events (match_id, flashscore_id, type, minute, player_name, team_id,
+                          player_flashscore_id, related_player_name, related_flashscore_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
 ON CONFLICT (match_id, flashscore_id) DO UPDATE
 SET type = EXCLUDED.type,
     minute = EXCLUDED.minute,
     player_name = EXCLUDED.player_name,
     team_id = EXCLUDED.team_id,
+    player_flashscore_id = EXCLUDED.player_flashscore_id,
+    related_player_name = EXCLUDED.related_player_name,
+    related_flashscore_id = EXCLUDED.related_flashscore_id,
     updated_at = now();
 
 -- name: UpsertMatchStats :exec

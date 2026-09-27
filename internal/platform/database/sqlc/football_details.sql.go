@@ -53,24 +53,57 @@ func (q *Queries) ListMatchesMissingDetails(ctx context.Context, limit int32) ([
 	return items, nil
 }
 
+const upsertLineup = `-- name: UpsertLineup :exec
+INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (match_id, player_id) DO UPDATE
+SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter
+`
+
+type UpsertLineupParams struct {
+	MatchID     pgtype.UUID
+	PlayerID    pgtype.UUID
+	TeamID      pgtype.UUID
+	ShirtNumber pgtype.Int2
+	Starter     bool
+}
+
+func (q *Queries) UpsertLineup(ctx context.Context, arg UpsertLineupParams) error {
+	_, err := q.db.Exec(ctx, upsertLineup,
+		arg.MatchID,
+		arg.PlayerID,
+		arg.TeamID,
+		arg.ShirtNumber,
+		arg.Starter,
+	)
+	return err
+}
+
 const upsertMatchEvent = `-- name: UpsertMatchEvent :exec
-INSERT INTO match_events (match_id, flashscore_id, type, minute, player_name, team_id, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO match_events (match_id, flashscore_id, type, minute, player_name, team_id,
+                          player_flashscore_id, related_player_name, related_flashscore_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
 ON CONFLICT (match_id, flashscore_id) DO UPDATE
 SET type = EXCLUDED.type,
     minute = EXCLUDED.minute,
     player_name = EXCLUDED.player_name,
     team_id = EXCLUDED.team_id,
+    player_flashscore_id = EXCLUDED.player_flashscore_id,
+    related_player_name = EXCLUDED.related_player_name,
+    related_flashscore_id = EXCLUDED.related_flashscore_id,
     updated_at = now()
 `
 
 type UpsertMatchEventParams struct {
-	MatchID      pgtype.UUID
-	FlashscoreID string
-	Type         string
-	Minute       string
-	PlayerName   string
-	TeamID       pgtype.UUID
+	MatchID             pgtype.UUID
+	FlashscoreID        string
+	Type                string
+	Minute              string
+	PlayerName          string
+	TeamID              pgtype.UUID
+	PlayerFlashscoreID  pgtype.Text
+	RelatedPlayerName   pgtype.Text
+	RelatedFlashscoreID pgtype.Text
 }
 
 func (q *Queries) UpsertMatchEvent(ctx context.Context, arg UpsertMatchEventParams) error {
@@ -81,6 +114,9 @@ func (q *Queries) UpsertMatchEvent(ctx context.Context, arg UpsertMatchEventPara
 		arg.Minute,
 		arg.PlayerName,
 		arg.TeamID,
+		arg.PlayerFlashscoreID,
+		arg.RelatedPlayerName,
+		arg.RelatedFlashscoreID,
 	)
 	return err
 }
@@ -104,12 +140,14 @@ func (q *Queries) UpsertMatchStats(ctx context.Context, arg UpsertMatchStatsPara
 }
 
 const upsertPlayer = `-- name: UpsertPlayer :one
-INSERT INTO players (flashscore_id, team_id, name, nationality, updated_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
-    nationality = EXCLUDED.nationality,
+    nationality = coalesce(EXCLUDED.nationality, players.nationality),
     team_id = EXCLUDED.team_id,
+    shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
+    position = coalesce(EXCLUDED.position, players.position),
     updated_at = now()
 RETURNING id
 `
@@ -119,14 +157,19 @@ type UpsertPlayerParams struct {
 	TeamID       pgtype.UUID
 	Name         string
 	Nationality  pgtype.Text
+	ShirtNumber  pgtype.Int2
+	Position     pgtype.Text
 }
 
+// Position is only known for goalkeepers (lineup role); never downgrade a known one to NULL.
 func (q *Queries) UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertPlayer,
 		arg.FlashscoreID,
 		arg.TeamID,
 		arg.Name,
 		arg.Nationality,
+		arg.ShirtNumber,
+		arg.Position,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

@@ -40,13 +40,13 @@ func TestToMatchResponse(t *testing.T) {
 		AwayScore: pgtype.Int2{Valid: true},
 	}
 
-	got := toMatchResponse(row)
+	got := ToMatchResponse(row)
 	if got.Time != "19:30" || got.Date != "14.09.2026" || got.Score != nil {
 		t.Errorf("scheduled: got time=%q date=%q score=%v", got.Time, got.Date, got.Score)
 	}
 
 	row.Status, row.HomeScore.Int16, row.AwayScore.Int16 = "finished", 2, 1
-	if got := toMatchResponse(row); got.Score == nil || *got.Score != [2]int{2, 1} {
+	if got := ToMatchResponse(row); got.Score == nil || *got.Score != [2]int{2, 1} {
 		t.Errorf("finished score = %v", got.Score)
 	}
 }

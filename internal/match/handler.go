@@ -31,7 +31,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) error {
 
 	response := ListMatchesResponse{Data: make([]MatchResponse, 0, len(matches))}
 	for _, m := range matches {
-		response.Data = append(response.Data, toMatchResponse(m))
+		response.Data = append(response.Data, ToMatchResponse(m))
 	}
 
 	return httpx.WriteJSON(w, http.StatusOK, response)

@@ -23,9 +23,10 @@ func NewService(queries *db.Queries, tracer trace.Tracer) *Service {
 }
 
 type matchDetail struct {
-	Match  db.ListMatchesRow
-	Events []db.ListMatchEventsRow
-	Stats  []byte // JSONB array of {label, home, away}; nil when not scraped yet
+	Match   db.ListMatchesRow
+	Events  []db.ListMatchEventsRow
+	Lineups []db.ListMatchLineupsRow
+	Stats   []byte // JSONB array of {label, home, away}; nil when not scraped yet
 }
 
 func (s *Service) List(ctx context.Context, f listFilter) ([]db.ListMatchesRow, error) {
@@ -71,7 +72,12 @@ func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (matchDetail, erro
 		return matchDetail{}, tracing.Fail(span, apperror.Internal(CodeMatchQueryFailed, "failed to get match stats", err))
 	}
 
-	return matchDetail{Match: db.ListMatchesRow(row), Events: events, Stats: stats}, nil
+	lineups, err := s.queries.ListMatchLineups(ctx, row.ID)
+	if err != nil {
+		return matchDetail{}, tracing.Fail(span, apperror.Internal(CodeMatchQueryFailed, "failed to list lineups", err))
+	}
+
+	return matchDetail{Match: db.ListMatchesRow(row), Events: events, Lineups: lineups, Stats: stats}, nil
 }
 
 func pgUUID(id uuid.UUID) pgtype.UUID {

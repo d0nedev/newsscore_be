@@ -20,10 +20,17 @@ JOIN teams a ON a.id = m.away_team_id
 WHERE m.id = $1;
 
 -- name: ListMatchEvents :many
-SELECT type, minute, player_name, team_id
+SELECT type, minute, player_name, team_id, related_player_name
 FROM match_events
 WHERE match_id = $1
 ORDER BY NULLIF(substring(minute FROM '^\d+'), '')::int NULLS LAST, id;
 
 -- name: GetMatchStats :one
 SELECT stats FROM match_statistics WHERE match_id = $1;
+
+-- name: ListMatchLineups :many
+SELECT p.id, p.name, l.shirt_number, l.starter, l.team_id
+FROM match_lineups l
+JOIN players p ON p.id = l.player_id
+WHERE l.match_id = $1
+ORDER BY l.starter DESC, l.shirt_number NULLS LAST, p.name;

@@ -135,13 +135,25 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDe
 	}
 
 	for _, p := range players {
-		if _, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
+		number := pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0}
+		position := pgtype.Text{String: "GK", Valid: p.Goalkeeper}
+		team := teamBySide(p.Team)
+
+		playerID, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
 			FlashscoreID: p.FlashscoreID,
-			TeamID:       teamBySide(p.Team),
+			TeamID:       team,
 			Name:         p.Name,
 			Nationality:  pgtype.Text{String: p.Nationality, Valid: p.Nationality != ""},
-		}); err != nil {
+			ShirtNumber:  number,
+			Position:     position,
+		})
+		if err != nil {
 			return fmt.Errorf("upsert player %s: %w", p.FlashscoreID, err)
+		}
+		if err := w.db.UpsertLineup(ctx, db.UpsertLineupParams{
+			MatchID: m.ID, PlayerID: playerID, TeamID: team, ShirtNumber: number, Starter: p.Starter,
+		}); err != nil {
+			return fmt.Errorf("upsert lineup %s: %w", p.FlashscoreID, err)
 		}
 	}
 
@@ -211,15 +223,22 @@ func (w *Worker) saveEvents(ctx context.Context, matchID, homeID, awayID pgtype.
 			team = awayID
 		}
 		if err := w.db.UpsertMatchEvent(ctx, db.UpsertMatchEventParams{
-			MatchID:      matchID,
-			FlashscoreID: e.ID,
-			Type:         e.Type,
-			Minute:       e.Minute,
-			PlayerName:   e.PlayerName,
-			TeamID:       team,
+			MatchID:             matchID,
+			FlashscoreID:        e.ID,
+			Type:                e.Type,
+			Minute:              e.Minute,
+			PlayerName:          e.PlayerName,
+			TeamID:              team,
+			PlayerFlashscoreID:  optText(e.PlayerID),
+			RelatedPlayerName:   optText(e.RelatedName),
+			RelatedFlashscoreID: optText(e.RelatedID),
 		}); err != nil {
 			return fmt.Errorf("upsert event %s: %w", e.ID, err)
 		}
 	}
 	return nil
+}
+
+func optText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: s != ""}
 }

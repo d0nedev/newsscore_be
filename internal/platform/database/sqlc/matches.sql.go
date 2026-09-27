@@ -74,17 +74,18 @@ func (q *Queries) GetMatchStats(ctx context.Context, matchID pgtype.UUID) ([]byt
 }
 
 const listMatchEvents = `-- name: ListMatchEvents :many
-SELECT type, minute, player_name, team_id
+SELECT type, minute, player_name, team_id, related_player_name
 FROM match_events
 WHERE match_id = $1
 ORDER BY NULLIF(substring(minute FROM '^\d+'), '')::int NULLS LAST, id
 `
 
 type ListMatchEventsRow struct {
-	Type       string
-	Minute     string
-	PlayerName string
-	TeamID     pgtype.UUID
+	Type              string
+	Minute            string
+	PlayerName        string
+	TeamID            pgtype.UUID
+	RelatedPlayerName pgtype.Text
 }
 
 func (q *Queries) ListMatchEvents(ctx context.Context, matchID pgtype.UUID) ([]ListMatchEventsRow, error) {
@@ -100,6 +101,49 @@ func (q *Queries) ListMatchEvents(ctx context.Context, matchID pgtype.UUID) ([]L
 			&i.Type,
 			&i.Minute,
 			&i.PlayerName,
+			&i.TeamID,
+			&i.RelatedPlayerName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMatchLineups = `-- name: ListMatchLineups :many
+SELECT p.id, p.name, l.shirt_number, l.starter, l.team_id
+FROM match_lineups l
+JOIN players p ON p.id = l.player_id
+WHERE l.match_id = $1
+ORDER BY l.starter DESC, l.shirt_number NULLS LAST, p.name
+`
+
+type ListMatchLineupsRow struct {
+	ID          pgtype.UUID
+	Name        string
+	ShirtNumber pgtype.Int2
+	Starter     bool
+	TeamID      pgtype.UUID
+}
+
+func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]ListMatchLineupsRow, error) {
+	rows, err := q.db.Query(ctx, listMatchLineups, matchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMatchLineupsRow
+	for rows.Next() {
+		var i ListMatchLineupsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ShirtNumber,
+			&i.Starter,
 			&i.TeamID,
 		); err != nil {
 			return nil, err

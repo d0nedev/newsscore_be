@@ -83,12 +83,27 @@ type EventResponse struct {
 	Team   string `json:"team"`
 	Type   string `json:"type"`
 	Player string `json:"player"`
+	Assist string `json:"assist,omitempty"` // goals only
+	Note   string `json:"note,omitempty"`   // substitutions: who went off
+}
+
+type LineupPlayer struct {
+	PlayerID string `json:"playerId"`
+	Name     string `json:"name"`
+	Number   int    `json:"number,omitempty"`
+	Starter  bool   `json:"starter"`
+}
+
+type Lineups struct {
+	Home []LineupPlayer `json:"home"`
+	Away []LineupPlayer `json:"away"`
 }
 
 type MatchDetailResponse struct {
 	MatchResponse
-	Events []EventResponse `json:"events"`
-	Stats  json.RawMessage `json:"stats"`
+	Events  []EventResponse `json:"events"`
+	Stats   json.RawMessage `json:"stats"`
+	Lineups Lineups         `json:"lineups"`
 }
 
 type ListMatchesResponse struct {
@@ -99,7 +114,8 @@ type DataResponse struct {
 	Data any `json:"data"`
 }
 
-func toMatchResponse(m db.ListMatchesRow) MatchResponse {
+// ToMatchResponse renders a match row; other packages convert their identical row types to db.ListMatchesRow.
+func ToMatchResponse(m db.ListMatchesRow) MatchResponse {
 	kickoff := m.MatchTime.Time.In(wib)
 
 	resp := MatchResponse{
@@ -155,9 +171,18 @@ func liveMinute(stage pgtype.Int2, startedAt pgtype.Timestamptz, now time.Time) 
 
 func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 	resp := MatchDetailResponse{
-		MatchResponse: toMatchResponse(d.Match),
+		MatchResponse: ToMatchResponse(d.Match),
 		Events:        make([]EventResponse, 0, len(d.Events)),
 		Stats:         json.RawMessage(`[]`),
+		Lineups:       Lineups{Home: []LineupPlayer{}, Away: []LineupPlayer{}},
+	}
+	for _, l := range d.Lineups {
+		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter}
+		if l.TeamID == d.Match.HomeID {
+			resp.Lineups.Home = append(resp.Lineups.Home, p)
+		} else {
+			resp.Lineups.Away = append(resp.Lineups.Away, p)
+		}
 	}
 	if len(d.Stats) > 0 {
 		resp.Stats = d.Stats
@@ -168,12 +193,21 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 		if kind == "" {
 			continue
 		}
-		resp.Events = append(resp.Events, EventResponse{
+		ev := EventResponse{
 			Minute: e.Minute,
 			Team:   side(e.TeamID, d.Match.HomeID),
 			Type:   kind,
 			Player: e.PlayerName,
-		})
+		}
+		switch kind {
+		case "goal":
+			ev.Assist = e.RelatedPlayerName.String
+		case "sub":
+			if e.RelatedPlayerName.Valid {
+				ev.Note = "Keluar: " + e.RelatedPlayerName.String
+			}
+		}
+		resp.Events = append(resp.Events, ev)
 	}
 
 	return resp

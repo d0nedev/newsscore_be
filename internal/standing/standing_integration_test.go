@@ -52,9 +52,9 @@ func TestIntegrationListStandings(t *testing.T) {
 	}
 
 	type got struct {
-		name                        string
+		name                       string
 		p, w, d, l, gf, ga, points int32
-		form                        []string
+		form                       []string
 	}
 	want := []got{
 		{"Alpha", 2, 1, 1, 0, 3, 1, 4, []string{"D", "W"}},

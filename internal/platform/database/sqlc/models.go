@@ -27,14 +27,25 @@ type Match struct {
 }
 
 type MatchEvent struct {
-	ID           pgtype.UUID
-	MatchID      pgtype.UUID
-	FlashscoreID string
-	Type         string
-	Minute       string
-	PlayerName   string
-	TeamID       pgtype.UUID
-	UpdatedAt    pgtype.Timestamptz
+	ID                  pgtype.UUID
+	MatchID             pgtype.UUID
+	FlashscoreID        string
+	Type                string
+	Minute              string
+	PlayerName          string
+	TeamID              pgtype.UUID
+	UpdatedAt           pgtype.Timestamptz
+	PlayerFlashscoreID  pgtype.Text
+	RelatedPlayerName   pgtype.Text
+	RelatedFlashscoreID pgtype.Text
+}
+
+type MatchLineup struct {
+	MatchID     pgtype.UUID
+	PlayerID    pgtype.UUID
+	TeamID      pgtype.UUID
+	ShirtNumber pgtype.Int2
+	Starter     bool
 }
 
 type MatchStatistic struct {
@@ -73,6 +84,7 @@ type Player struct {
 	Position     pgtype.Text
 	Nationality  pgtype.Text
 	UpdatedAt    pgtype.Timestamptz
+	ShirtNumber  pgtype.Int2
 }
 
 type Session struct {
