@@ -31,7 +31,10 @@ services:
     build: .
     ports:
       - "8080:8080"
+    volumes:
+      - assets:/data/assets
     environment: &app-env
+      ASSETS_DIR: /data/assets
       APP_SERVICE_NAME: newsscore
       APP_PORT: "8080"
       APP_ENV: development
@@ -59,6 +62,8 @@ services:
   ingestor:
     build: .
     entrypoint: ["/ingestor"]
+    volumes:
+      - assets:/data/assets
     environment:
       <<: *app-env
       INGEST_INTERVAL: 5m
@@ -111,3 +116,4 @@ services:
 
 volumes:
   pgdata:
+  assets: # team logos: the ingestor writes, the API serves /assets/

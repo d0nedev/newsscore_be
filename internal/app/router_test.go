@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,7 +20,16 @@ import (
 func testRouter(t *testing.T, logs *bytes.Buffer) (http.Handler, *health.Handler) {
 	t.Helper()
 
+	assetsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(assetsDir, "teams"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "teams", "abc.png"), []byte("\x89PNG\r\n\x1a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	cfg := &config.Config{
+		App:       config.AppConfig{AssetsDir: assetsDir},
 		RateLimit: config.RateLimitConfig{RequestsPerMinute: 3},
 	}
 	logger := slog.New(slog.NewJSONHandler(logs, nil))
@@ -116,5 +127,19 @@ func TestRouterProbeLogging(t *testing.T) {
 
 	if !strings.Contains(logs.String(), `"level":"WARN"`) || !strings.Contains(logs.String(), `"status":503`) {
 		t.Errorf("failed probe should be logged at WARN: %s", logs.String())
+	}
+}
+
+func TestRouterServesAssets(t *testing.T) {
+	h, _ := testRouter(t, &bytes.Buffer{})
+
+	rec := serve(h, http.MethodGet, "/assets/teams/abc.png", nil)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || rec.Header().Get("Cache-Control") != "public, max-age=86400" {
+		t.Errorf("logo: %d %v", rec.Code, rec.Header())
+	}
+	for _, path := range []string{"/assets/teams/", "/assets/teams", "/assets/teams/missing.png", "/assets/../go.mod"} {
+		if rec := serve(h, http.MethodGet, path, nil); rec.Code == http.StatusOK {
+			t.Errorf("%s: served with 200", path)
+		}
 	}
 }

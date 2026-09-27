@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
@@ -17,10 +19,11 @@ type Worker struct {
 	db            *db.Queries
 	logger        *slog.Logger
 	detailsPerRun int
+	assetsDir     string
 }
 
-func NewWorker(queries *db.Queries, logger *slog.Logger, detailsPerRun int) *Worker {
-	return &Worker{db: queries, logger: logger, detailsPerRun: detailsPerRun}
+func NewWorker(queries *db.Queries, logger *slog.Logger, detailsPerRun int, assetsDir string) *Worker {
+	return &Worker{db: queries, logger: logger, detailsPerRun: detailsPerRun, assetsDir: assetsDir}
 }
 
 // Sync pulls the league page (fixtures and results), then fills in details for finished matches that lack them.
@@ -46,7 +49,102 @@ func (w *Worker) Sync(ctx context.Context) error {
 		}
 		time.Sleep(time.Second) // same politeness gap as the feed requests
 	}
+	if err := w.syncImages(ctx); err != nil {
+		w.logger.Error("sync images failed", slog.Any("error", err))
+	}
 	return w.syncDetails(ctx)
+}
+
+// photosPerRun caps player photo downloads per league sync (one per second);
+// the first fill of ~500 photos then spreads over a few runs.
+const photosPerRun = 100
+
+// mirrorItem is one image to copy into assetsDir: its owner, source, and where to record the local path.
+type mirrorItem struct {
+	id     pgtype.UUID
+	name   string // file name without extension, the Flashscore id
+	source string
+}
+
+// syncImages stores team logos and player photos under assetsDir once, so
+// clients load them from us rather than hotlinking Flashscore.
+func (w *Worker) syncImages(ctx context.Context) error {
+	teams, err := w.db.ListTeamsMissingLogo(ctx)
+	if err != nil {
+		return fmt.Errorf("list teams missing logo: %w", err)
+	}
+	logos := make([]mirrorItem, 0, len(teams))
+	for _, t := range teams {
+		logos = append(logos, mirrorItem{t.ID, t.FlashscoreID, t.LogoSourceUrl})
+	}
+	if err := w.mirror(ctx, "teams", logos, func(id pgtype.UUID, url string) error {
+		return w.db.SetTeamLogo(ctx, db.SetTeamLogoParams{ID: id, LogoUrl: optText(url)})
+	}); err != nil {
+		return err
+	}
+
+	players, err := w.db.ListPlayersMissingPhoto(ctx, photosPerRun)
+	if err != nil {
+		return fmt.Errorf("list players missing photo: %w", err)
+	}
+	photos := make([]mirrorItem, 0, len(players))
+	for _, p := range players {
+		photos = append(photos, mirrorItem{p.ID, p.FlashscoreID, p.PhotoSourceUrl})
+	}
+	return w.mirror(ctx, "players", photos, func(id pgtype.UUID, url string) error {
+		return w.db.SetPlayerPhoto(ctx, db.SetPlayerPhotoParams{ID: id, PhotoUrl: optText(url)})
+	})
+}
+
+func (w *Worker) mirror(ctx context.Context, kind string, items []mirrorItem, record func(pgtype.UUID, string) error) error {
+	if len(items) == 0 {
+		return nil
+	}
+	dir := filepath.Join(w.assetsDir, kind)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	for _, it := range items {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		time.Sleep(time.Second)
+
+		body, ext, err := flashscore.DownloadImage(it.source)
+		if err != nil {
+			w.logger.Warn("download image failed", slog.String("kind", kind), slog.String("id", it.name), slog.Any("error", err))
+			continue
+		}
+		file := it.name + ext
+		if err := writeFileAtomic(filepath.Join(dir, file), body); err != nil {
+			return err
+		}
+		if err := record(it.id, "/assets/"+kind+"/"+file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeFileAtomic writes via a temp file and rename, so the API never serves half a file.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetitionsRow) error {
@@ -60,10 +158,10 @@ func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetition
 	teamIDs := make(map[string]pgtype.UUID, len(teams))
 	for _, t := range teams {
 		id, err := w.db.UpsertTeam(ctx, db.UpsertTeamParams{
-			FlashscoreID: t.FlashscoreID,
-			Name:         t.Name,
-			ShortName:    t.ShortName,
-			LogoUrl:      optText(t.LogoURL),
+			FlashscoreID:  t.FlashscoreID,
+			Name:          t.Name,
+			ShortName:     t.ShortName,
+			LogoSourceUrl: optText(t.LogoURL),
 		})
 		if err != nil {
 			w.logger.Error("upsert team failed", slog.String("team", t.Name), slog.Any("error", err))
@@ -148,12 +246,13 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDe
 		team := sideTeam(p.Team, m.HomeTeamID, m.AwayTeamID)
 
 		playerID, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
-			FlashscoreID: p.FlashscoreID,
-			TeamID:       team,
-			Name:         p.Name,
-			Nationality:  optText(p.Nationality),
-			ShirtNumber:  number,
-			Position:     position,
+			FlashscoreID:   p.FlashscoreID,
+			TeamID:         team,
+			Name:           p.Name,
+			Nationality:    optText(p.Nationality),
+			ShirtNumber:    number,
+			Position:       position,
+			PhotoSourceUrl: optText(p.PhotoURL),
 		})
 		if err != nil {
 			return fmt.Errorf("upsert player %s: %w", p.FlashscoreID, err)

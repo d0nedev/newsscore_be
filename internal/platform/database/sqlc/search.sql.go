@@ -53,7 +53,7 @@ func (q *Queries) SearchNews(ctx context.Context, q_ string) ([]SearchNewsRow, e
 }
 
 const searchPlayers = `-- name: SearchPlayers :many
-SELECT p.id, p.name, p.shirt_number, t.name AS team_name
+SELECT p.id, p.name, p.shirt_number, p.photo_url, t.name AS team_name
 FROM players p
 LEFT JOIN teams t ON t.id = p.team_id
 WHERE $1::text <% p.name
@@ -65,6 +65,7 @@ type SearchPlayersRow struct {
 	ID          pgtype.UUID
 	Name        string
 	ShirtNumber pgtype.Int2
+	PhotoUrl    pgtype.Text
 	TeamName    pgtype.Text
 }
 
@@ -81,6 +82,7 @@ func (q *Queries) SearchPlayers(ctx context.Context, q_ string) ([]SearchPlayers
 			&i.ID,
 			&i.Name,
 			&i.ShirtNumber,
+			&i.PhotoUrl,
 			&i.TeamName,
 		); err != nil {
 			return nil, err

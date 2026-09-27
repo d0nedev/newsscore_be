@@ -44,7 +44,10 @@ services:
         VERSION: ${VERSION:-dev}
     image: newsscore:${VERSION:-dev}
     restart: unless-stopped
+    volumes:
+      - assets:/data/assets
     environment: &app-env
+      ASSETS_DIR: /data/assets
       APP_SERVICE_NAME: newsscore
       APP_PORT: "8080"
       APP_ENV: production
@@ -86,6 +89,8 @@ services:
     image: newsscore:${VERSION:-dev}
     entrypoint: ["/ingestor"]
     restart: unless-stopped
+    volumes:
+      - assets:/data/assets
     environment:
       <<: *app-env
       INGEST_INTERVAL: ${INGEST_INTERVAL:-5m}
@@ -180,5 +185,6 @@ networks:
 
 volumes:
   pgdata:
+  assets: # team logos: the ingestor writes, the API serves /assets/
   caddy_data:
   caddy_config:

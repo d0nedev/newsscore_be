@@ -46,7 +46,7 @@ func run() int {
 	defer pool.Close()
 
 	flashscore.SetFSign(cfg.Ingest.FSign)
-	worker := ingest.NewWorker(db.New(pool), logger, cfg.Ingest.DetailsPerRun)
+	worker := ingest.NewWorker(db.New(pool), logger, cfg.Ingest.DetailsPerRun, cfg.App.AssetsDir)
 	logger.Info("ingestor started",
 		slog.Duration("interval", cfg.Ingest.Interval),
 		slog.Duration("live_interval", cfg.Ingest.LiveInterval),

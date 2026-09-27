@@ -382,6 +382,7 @@ paths:
                             name: { type: string }
                             number: { type: integer }
                             team: { type: string }
+                            photo: { type: string }
                       news:
                         type: array
                         items:
@@ -534,7 +535,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         badge: { type: string }
-        logo: { type: string, format: uri }
+        logo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
         season: { type: integer }
         squad:
           type: array
@@ -547,6 +548,7 @@ components:
               number: { type: integer }
               position: { type: string, description: 'Only "GK" is known from the source' }
               nationality: { type: string }
+              photo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
               matches: { type: integer, description: Starts plus substitute appearances }
               goals: { type: integer }
               assists: { type: integer }
@@ -562,6 +564,7 @@ components:
         number: { type: integer }
         position: { type: string }
         country: { type: string }
+        photo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
         team:
           type: [object, "null"]
           properties:
@@ -621,7 +624,7 @@ components:
         teamId: { type: string, format: uuid }
         team: { type: string }
         badge: { type: string }
-        logo: { type: string, format: uri }
+        logo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
         played: { type: integer }
         won: { type: integer }
         drawn: { type: integer }
@@ -701,7 +704,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         badge: { type: string, description: 'Kode singkat, mis. "PER"' }
-        logo: { type: string, format: uri }
+        logo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
 
     LineupPlayer:
       type: object
@@ -711,6 +714,7 @@ components:
         name: { type: string }
         number: { type: integer }
         starter: { type: boolean }
+        photo: { type: string }
 
     Match:
       type: object

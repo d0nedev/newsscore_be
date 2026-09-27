@@ -3,7 +3,7 @@ SELECT id, name, short_name, logo_url FROM teams WHERE id = $1;
 
 -- name: ListTeamSquad :many
 -- Current squad with season numbers, optionally for one competition. An appearance is a start or a substitution on.
-SELECT p.id, p.name, p.shirt_number, p.position, p.nationality,
+SELECT p.id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
        (SELECT count(*) FROM match_lineups l JOIN matches m ON m.id = l.match_id
          WHERE l.player_id = p.id AND m.season = sqlc.arg(season)::smallint AND (sqlc.narg(competition_id)::uuid IS NULL OR m.competition_id = sqlc.narg(competition_id)::uuid)
            AND (l.starter OR EXISTS (SELECT 1 FROM match_events e

@@ -81,6 +81,7 @@ type Player struct {
 	ShirtNumber  int
 	Team         int  // 1 or 2
 	Starter      bool // false for substitutes
+	PhotoURL     string
 	Goalkeeper   bool
 }
 
@@ -222,6 +223,7 @@ func parseLineups(body string) []Player {
 			Team:         side,
 			Starter:      section == "Starting Lineups",
 			Goalkeeper:   m["LS"] == "Goalkeeper",
+			PhotoURL:     imageURL(m["LPX"]), // 108x108; LPI and LPL are smaller cuts
 		})
 	}
 	return players

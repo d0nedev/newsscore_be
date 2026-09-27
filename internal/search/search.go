@@ -81,6 +81,7 @@ type Player struct {
 	Name   string `json:"name"`
 	Number int    `json:"number,omitempty"`
 	Team   string `json:"team,omitempty"`
+	Photo  string `json:"photo,omitempty"`
 }
 
 type News struct {
@@ -117,7 +118,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) error {
 		out.Data.Teams = append(out.Data.Teams, Team{ID: t.ID.String(), Name: t.Name, Badge: t.ShortName, Logo: t.LogoUrl.String})
 	}
 	for _, p := range res.Players {
-		out.Data.Players = append(out.Data.Players, Player{ID: p.ID.String(), Name: p.Name, Number: int(p.ShirtNumber.Int16), Team: p.TeamName.String})
+		out.Data.Players = append(out.Data.Players, Player{ID: p.ID.String(), Name: p.Name, Number: int(p.ShirtNumber.Int16), Team: p.TeamName.String, Photo: p.PhotoUrl.String})
 	}
 	for _, n := range res.News {
 		out.Data.News = append(out.Data.News, News{ID: n.Slug, Title: n.Title, Category: n.Category, PublishedAt: n.PublishedAt.Time.UTC().Format(time.RFC3339)})

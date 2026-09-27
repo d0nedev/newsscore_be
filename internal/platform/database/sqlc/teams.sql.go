@@ -91,7 +91,7 @@ func (q *Queries) ListTeamRecentMatches(ctx context.Context, arg ListTeamRecentM
 }
 
 const listTeamSquad = `-- name: ListTeamSquad :many
-SELECT p.id, p.name, p.shirt_number, p.position, p.nationality,
+SELECT p.id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
        (SELECT count(*) FROM match_lineups l JOIN matches m ON m.id = l.match_id
          WHERE l.player_id = p.id AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid)
            AND (l.starter OR EXISTS (SELECT 1 FROM match_events e
@@ -120,6 +120,7 @@ type ListTeamSquadRow struct {
 	ShirtNumber pgtype.Int2
 	Position    pgtype.Text
 	Nationality pgtype.Text
+	PhotoUrl    pgtype.Text
 	Apps        int32
 	Goals       int32
 	Assists     int32
@@ -141,6 +142,7 @@ func (q *Queries) ListTeamSquad(ctx context.Context, arg ListTeamSquadParams) ([
 			&i.ShirtNumber,
 			&i.Position,
 			&i.Nationality,
+			&i.PhotoUrl,
 			&i.Apps,
 			&i.Goals,
 			&i.Assists,

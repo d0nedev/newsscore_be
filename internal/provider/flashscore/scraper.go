@@ -103,13 +103,13 @@ func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bo
 		FlashscoreID: m["PX"],
 		Name:         m["AE"],
 		ShortName:    m["WM"],
-		LogoURL:      "https://static.flashscore.com/res/image/data/" + m["OA"],
+		LogoURL:      imageURL(m["OA"]),
 	}
 	away := domain.Team{
 		FlashscoreID: m["PY"],
 		Name:         m["AF"],
 		ShortName:    m["WN"],
-		LogoURL:      "https://static.flashscore.com/res/image/data/" + m["OB"],
+		LogoURL:      imageURL(m["OB"]),
 	}
 
 	ts, _ := strconv.ParseInt(m["AD"], 10, 64)
@@ -129,6 +129,51 @@ func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bo
 		Round:                m["ER"],
 		StageStartedAt:       unix(m["AO"]),
 	}, home, away, true
+}
+
+// imageURL turns a Flashscore image id ("pbvGiliT-fudV7NWp.png") into its URL.
+func imageURL(file string) string {
+	if file == "" {
+		return ""
+	}
+	return "https://static.flashscore.com/res/image/data/" + file
+}
+
+// maxImageSize caps a downloaded logo; real ones are a few KB.
+const maxImageSize = 2 << 20
+
+// DownloadImage fetches a PNG/JPEG/WebP image (team logo, player photo) and returns its bytes
+// and file extension. Other content types are refused, so nothing scriptable
+// (SVG, HTML) ends up served from our origin.
+func DownloadImage(url string) ([]byte, string, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("unexpected status %d", res.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxImageSize+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(body) > maxImageSize {
+		return nil, "", fmt.Errorf("image larger than %d bytes", maxImageSize)
+	}
+
+	ext, ok := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[http.DetectContentType(body)]
+	if !ok {
+		return nil, "", fmt.Errorf("not a PNG, JPEG, or WebP image")
+	}
+	return body, ext, nil
 }
 
 // sectionPhase returns what follows " - " in a section header, or "" for the main stage.

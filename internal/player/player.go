@@ -144,6 +144,7 @@ type Profile struct {
 	Number   int          `json:"number,omitempty"`
 	Position string       `json:"position,omitempty"`
 	Country  string       `json:"country,omitempty"`
+	Photo    string       `json:"photo,omitempty"` // local /assets path
 	Team     *Team        `json:"team"`
 	Season   SeasonTotals `json:"season"`
 	// Competitions splits the season totals per competition, in match-log order.
@@ -164,7 +165,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 
 	out := Profile{
 		ID: p.ID.String(), Name: p.Name, Number: int(p.ShirtNumber.Int16),
-		Position: p.Position.String, Country: p.Nationality.String,
+		Position: p.Position.String, Country: p.Nationality.String, Photo: p.PhotoUrl.String,
 		Season:       SeasonTotals{Season: int(season)},
 		Competitions: []CompetitionTotals{},
 		MatchLog:     make([]MatchLogEntry, 0, len(log)),

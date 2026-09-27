@@ -6,7 +6,7 @@ ORDER BY word_similarity(sqlc.arg(q)::text, name) DESC, name
 LIMIT 5;
 
 -- name: SearchPlayers :many
-SELECT p.id, p.name, p.shirt_number, t.name AS team_name
+SELECT p.id, p.name, p.shirt_number, p.photo_url, t.name AS team_name
 FROM players p
 LEFT JOIN teams t ON t.id = p.team_id
 WHERE sqlc.arg(q)::text <% p.name

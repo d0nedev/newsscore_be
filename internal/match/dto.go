@@ -122,6 +122,7 @@ type LineupPlayer struct {
 	Name     string `json:"name"`
 	Number   int    `json:"number,omitempty"`
 	Starter  bool   `json:"starter"`
+	Photo    string `json:"photo,omitempty"`
 }
 
 type Lineups struct {
@@ -210,7 +211,7 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 		Lineups:       Lineups{Home: []LineupPlayer{}, Away: []LineupPlayer{}},
 	}
 	for _, l := range d.Lineups {
-		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter}
+		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter, Photo: l.PhotoUrl.String}
 		if l.TeamID == d.Match.HomeTeamID {
 			resp.Lineups.Home = append(resp.Lineups.Home, p)
 		} else {

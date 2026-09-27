@@ -16,6 +16,8 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/tracing"
 	"log/slog"
 	"net/http"
+	"os"
+	"path"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -180,6 +182,7 @@ func newRouter(
 		httpx.WriteError(w, apperror.New(http.StatusMethodNotAllowed, apperror.CodeMethodNotAllowed, "method not allowed"))
 	})
 
+	router.Handle("/assets/*", assets(cfg.App.AssetsDir))
 	router.Get(livenessPath, healthHandler.Health)
 	router.Get(readinessPath, healthHandler.Ready)
 
@@ -194,4 +197,19 @@ func newRouter(
 	})
 
 	return router
+}
+
+// assets serves the ingestor's downloaded files (team logos). Only file paths are
+// served: directory listings 404. A logo keeps its name when its source changes,
+// so clients may show the old one for up to the cache lifetime (a day).
+func assets(dir string) http.Handler {
+	files := http.StripPrefix("/assets/", http.FileServerFS(os.DirFS(dir)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if path.Ext(r.URL.Path) == "" {
+			httpx.WriteError(w, apperror.New(http.StatusNotFound, apperror.CodeNotFound, "asset not found"))
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		files.ServeHTTP(w, r)
+	})
 }

@@ -19,7 +19,7 @@ ORDER BY NULLIF(substring(minute FROM '^\d+'), '')::int NULLS LAST, id;
 SELECT stats FROM match_statistics WHERE match_id = $1;
 
 -- name: ListMatchLineups :many
-SELECT p.id, p.name, l.shirt_number, l.starter, l.team_id
+SELECT p.id, p.name, p.photo_url, l.shirt_number, l.starter, l.team_id
 FROM match_lineups l
 JOIN players p ON p.id = l.player_id
 WHERE l.match_id = $1

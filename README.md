@@ -48,6 +48,7 @@ Kontrak lengkap: [`openapi.yaml`](openapi.yaml). Base path: `/api/v1`. Semua err
 | GET, POST | `/api/v1/admin/news` | sesi admin | Daftar (termasuk draft), buat |
 | GET, PUT, DELETE | `/api/v1/admin/news/{id}` | sesi admin | Baca, ganti, hapus |
 
+- `logo` dan `photo` berupa path lokal (`/assets/...`); tambahkan base URL API di depannya. File diunduh ingestor ke `ASSETS_DIR`.
 - Rate limit per IP (`RATE_LIMIT_REQUESTS_PER_MINUTE`), melebihi batas mendapat `429 RATE_LIMITED`.
 - Akun dibuat lewat CLI: `printf '%s\n' "$PASSWORD" | go run ./cmd/useradd -email you@example.com -name You [-admin]`.
 

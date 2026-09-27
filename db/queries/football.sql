@@ -1,10 +1,12 @@
 -- name: UpsertTeam :one
-INSERT INTO teams (flashscore_id, name, short_name, logo_url, updated_at)
+INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, updated_at)
 VALUES ($1, $2, $3, $4, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
     short_name = EXCLUDED.short_name,
-    logo_url = EXCLUDED.logo_url,
+    -- A new source clears the stored copy so the ingestor downloads it again.
+    logo_url = CASE WHEN teams.logo_source_url IS DISTINCT FROM EXCLUDED.logo_source_url THEN NULL ELSE teams.logo_url END,
+    logo_source_url = EXCLUDED.logo_source_url,
     updated_at = now()
 RETURNING id;
 
@@ -41,3 +43,11 @@ WHERE id = $1;
 
 -- name: ListActiveCompetitions :many
 SELECT id, slug, flashscore_path FROM competitions WHERE active ORDER BY sort_order;
+
+-- name: ListTeamsMissingLogo :many
+SELECT id, flashscore_id, logo_source_url::text AS logo_source_url
+FROM teams
+WHERE logo_url IS NULL AND logo_source_url IS NOT NULL;
+
+-- name: SetTeamLogo :exec
+UPDATE teams SET logo_url = $2 WHERE id = $1;

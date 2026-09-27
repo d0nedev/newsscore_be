@@ -116,15 +116,17 @@ type NewsLink struct {
 }
 
 type Player struct {
-	ID           pgtype.UUID
-	FlashscoreID string
-	TeamID       pgtype.UUID
-	Name         string
-	AvatarUrl    pgtype.Text
-	Position     pgtype.Text
-	Nationality  pgtype.Text
-	UpdatedAt    pgtype.Timestamptz
-	ShirtNumber  pgtype.Int2
+	ID             pgtype.UUID
+	FlashscoreID   string
+	TeamID         pgtype.UUID
+	Name           string
+	AvatarUrl      pgtype.Text
+	Position       pgtype.Text
+	Nationality    pgtype.Text
+	UpdatedAt      pgtype.Timestamptz
+	ShirtNumber    pgtype.Int2
+	PhotoSourceUrl pgtype.Text
+	PhotoUrl       pgtype.Text
 }
 
 type Session struct {
@@ -137,12 +139,13 @@ type Session struct {
 }
 
 type Team struct {
-	ID           pgtype.UUID
-	FlashscoreID string
-	Name         string
-	ShortName    string
-	LogoUrl      pgtype.Text
-	UpdatedAt    pgtype.Timestamptz
+	ID            pgtype.UUID
+	FlashscoreID  string
+	Name          string
+	ShortName     string
+	LogoUrl       pgtype.Text
+	UpdatedAt     pgtype.Timestamptz
+	LogoSourceUrl pgtype.Text
 }
 
 type User struct {

@@ -98,7 +98,7 @@ func (q *Queries) ListMatchEvents(ctx context.Context, matchID pgtype.UUID) ([]L
 }
 
 const listMatchLineups = `-- name: ListMatchLineups :many
-SELECT p.id, p.name, l.shirt_number, l.starter, l.team_id
+SELECT p.id, p.name, p.photo_url, l.shirt_number, l.starter, l.team_id
 FROM match_lineups l
 JOIN players p ON p.id = l.player_id
 WHERE l.match_id = $1
@@ -108,6 +108,7 @@ ORDER BY l.starter DESC, l.shirt_number NULLS LAST, p.name
 type ListMatchLineupsRow struct {
 	ID          pgtype.UUID
 	Name        string
+	PhotoUrl    pgtype.Text
 	ShirtNumber pgtype.Int2
 	Starter     bool
 	TeamID      pgtype.UUID
@@ -125,6 +126,7 @@ func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
+			&i.PhotoUrl,
 			&i.ShirtNumber,
 			&i.Starter,
 			&i.TeamID,

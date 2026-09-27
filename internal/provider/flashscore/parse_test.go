@@ -51,7 +51,7 @@ const (
 		"III÷necyDrYH¬IA÷2¬IB÷39'¬IE÷1¬IF÷Haye T.¬IK÷Yellow Card¬IM÷Y7DW0nHu¬~" +
 		"III÷OjJnQy65¬IA÷2¬IB÷46'¬IE÷6¬IF÷Putra B.¬IK÷Substitution - Out¬IM÷4bIpHm56¬IE÷7¬IF÷Sekulic B.¬IK÷Substitution - In¬IM÷AB4TE5oN¬~"
 	lineupsFeed = "LA÷Formation¬LB÷Starting Lineups¬LGT÷1¬LC÷1¬~" +
-		"LD÷1-4-4-2¬LH÷0¬LP÷Y5cFTU5E¬LI÷Chica S.¬LJ÷44¬LQ÷Spain¬~" +
+		"LD÷1-4-4-2¬LH÷0¬LP÷Y5cFTU5E¬LI÷Chica S.¬LPX÷0MnIUniA-EHOqXBOi.png¬LJ÷44¬LQ÷Spain¬~" +
 		"LH÷2¬LP÷OApFFtdg¬LI÷Handika R.¬LR÷(G)¬LS÷Goalkeeper¬LJ÷1¬~" +
 		"LC÷2¬~LD÷1-4-2-3-1¬LH÷1¬LP÷Y7DW0nHu¬LI÷Haye T.¬LJ÷33¬~" +
 		"LB÷Substitutes¬LGT÷1¬LC÷1¬~LH÷11¬LP÷SMRZSrKm¬LI÷Abizal R.¬LJ÷1¬LQ÷Indonesia¬~" +
@@ -79,7 +79,8 @@ func TestParseIncidents(t *testing.T) {
 func TestParseLineups(t *testing.T) {
 	got := parseLineups(lineupsFeed)
 	want := []Player{
-		{FlashscoreID: "Y5cFTU5E", Name: "Chica S.", Nationality: "Spain", ShirtNumber: 44, Team: 1, Starter: true},
+		{FlashscoreID: "Y5cFTU5E", Name: "Chica S.", Nationality: "Spain", ShirtNumber: 44, Team: 1, Starter: true,
+			PhotoURL: "https://static.flashscore.com/res/image/data/0MnIUniA-EHOqXBOi.png"},
 		{FlashscoreID: "OApFFtdg", Name: "Handika R.", ShirtNumber: 1, Team: 1, Starter: true, Goalkeeper: true},
 		{FlashscoreID: "Y7DW0nHu", Name: "Haye T.", ShirtNumber: 33, Team: 2, Starter: true},
 		{FlashscoreID: "SMRZSrKm", Name: "Abizal R.", Nationality: "Indonesia", ShirtNumber: 1, Team: 1},

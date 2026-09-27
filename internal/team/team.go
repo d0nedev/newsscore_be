@@ -100,6 +100,7 @@ type SquadPlayer struct {
 	Number      int    `json:"number,omitempty"`
 	Position    string `json:"position,omitempty"` // only "GK" is known from the source
 	Nationality string `json:"nationality,omitempty"`
+	Photo       string `json:"photo,omitempty"` // local /assets path
 	Matches     int32  `json:"matches"`
 	Goals       int32  `json:"goals"`
 	Assists     int32  `json:"assists"`
@@ -137,7 +138,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 	for _, s := range p.Squad {
 		out.Squad = append(out.Squad, SquadPlayer{
 			ID: s.ID.String(), Name: s.Name, Number: int(s.ShirtNumber.Int16),
-			Position: s.Position.String, Nationality: s.Nationality.String,
+			Position: s.Position.String, Nationality: s.Nationality.String, Photo: s.PhotoUrl.String,
 			Matches: s.Apps, Goals: s.Goals, Assists: s.Assists,
 		})
 	}

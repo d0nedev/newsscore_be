@@ -81,6 +81,52 @@ func (q *Queries) ListLiveCandidates(ctx context.Context) ([]ListLiveCandidatesR
 	return items, nil
 }
 
+const listTeamsMissingLogo = `-- name: ListTeamsMissingLogo :many
+SELECT id, flashscore_id, logo_source_url::text AS logo_source_url
+FROM teams
+WHERE logo_url IS NULL AND logo_source_url IS NOT NULL
+`
+
+type ListTeamsMissingLogoRow struct {
+	ID            pgtype.UUID
+	FlashscoreID  string
+	LogoSourceUrl string
+}
+
+func (q *Queries) ListTeamsMissingLogo(ctx context.Context) ([]ListTeamsMissingLogoRow, error) {
+	rows, err := q.db.Query(ctx, listTeamsMissingLogo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTeamsMissingLogoRow
+	for rows.Next() {
+		var i ListTeamsMissingLogoRow
+		if err := rows.Scan(&i.ID, &i.FlashscoreID, &i.LogoSourceUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setTeamLogo = `-- name: SetTeamLogo :exec
+UPDATE teams SET logo_url = $2 WHERE id = $1
+`
+
+type SetTeamLogoParams struct {
+	ID      pgtype.UUID
+	LogoUrl pgtype.Text
+}
+
+func (q *Queries) SetTeamLogo(ctx context.Context, arg SetTeamLogoParams) error {
+	_, err := q.db.Exec(ctx, setTeamLogo, arg.ID, arg.LogoUrl)
+	return err
+}
+
 const updateMatchLive = `-- name: UpdateMatchLive :exec
 UPDATE matches
 SET status = $2, stage = $3, stage_started_at = $4, home_score = $5, away_score = $6,
@@ -165,21 +211,23 @@ func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtyp
 }
 
 const upsertTeam = `-- name: UpsertTeam :one
-INSERT INTO teams (flashscore_id, name, short_name, logo_url, updated_at)
+INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, updated_at)
 VALUES ($1, $2, $3, $4, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
     short_name = EXCLUDED.short_name,
-    logo_url = EXCLUDED.logo_url,
+    -- A new source clears the stored copy so the ingestor downloads it again.
+    logo_url = CASE WHEN teams.logo_source_url IS DISTINCT FROM EXCLUDED.logo_source_url THEN NULL ELSE teams.logo_url END,
+    logo_source_url = EXCLUDED.logo_source_url,
     updated_at = now()
 RETURNING id
 `
 
 type UpsertTeamParams struct {
-	FlashscoreID string
-	Name         string
-	ShortName    string
-	LogoUrl      pgtype.Text
+	FlashscoreID  string
+	Name          string
+	ShortName     string
+	LogoSourceUrl pgtype.Text
 }
 
 func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (pgtype.UUID, error) {
@@ -187,7 +235,7 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (pgtype.
 		arg.FlashscoreID,
 		arg.Name,
 		arg.ShortName,
-		arg.LogoUrl,
+		arg.LogoSourceUrl,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

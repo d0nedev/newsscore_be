@@ -42,6 +42,8 @@ type AppConfig struct {
 	ShutdownDrainDelay time.Duration
 	ShutdownTimeout    time.Duration
 	TrustedProxies     []string
+	// AssetsDir holds files the ingestor downloads (team logos); the API serves it at /assets/.
+	AssetsDir string
 }
 
 type DBConfig struct {
@@ -114,6 +116,7 @@ func Load() (*Config, error) {
 	v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 0.1)
 	v.SetDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 600)
 	v.SetDefault("SESSION_TTL", "720h")
+	v.SetDefault("ASSETS_DIR", "data/assets")
 	v.SetDefault("INGEST_INTERVAL", "5m")
 	v.SetDefault("INGEST_DETAILS_PER_RUN", 20)
 	v.SetDefault("INGEST_LIVE_INTERVAL", "20s")
@@ -142,6 +145,7 @@ func Load() (*Config, error) {
 			ShutdownDrainDelay: v.GetDuration("APP_SHUTDOWN_DRAIN_DELAY"),
 			ShutdownTimeout:    v.GetDuration("APP_SHUTDOWN_TIMEOUT"),
 			TrustedProxies:     splitList(v.GetString("TRUSTED_PROXIES")),
+			AssetsDir:          v.GetString("ASSETS_DIR"),
 		},
 		DB: DBConfig{
 			Host:             v.GetString("DB_HOST"),

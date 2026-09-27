@@ -12,7 +12,7 @@ import (
 )
 
 const getPlayer = `-- name: GetPlayer :one
-SELECT p.id, p.flashscore_id, p.name, p.shirt_number, p.position, p.nationality,
+SELECT p.id, p.flashscore_id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
        t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name, t.logo_url AS team_logo_url
 FROM players p
 LEFT JOIN teams t ON t.id = p.team_id
@@ -26,6 +26,7 @@ type GetPlayerRow struct {
 	ShirtNumber   pgtype.Int2
 	Position      pgtype.Text
 	Nationality   pgtype.Text
+	PhotoUrl      pgtype.Text
 	TeamID        pgtype.UUID
 	TeamName      pgtype.Text
 	TeamShortName pgtype.Text
@@ -42,6 +43,7 @@ func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (GetPlayerRow, 
 		&i.ShirtNumber,
 		&i.Position,
 		&i.Nationality,
+		&i.PhotoUrl,
 		&i.TeamID,
 		&i.TeamName,
 		&i.TeamShortName,

@@ -1,13 +1,17 @@
 -- name: UpsertPlayer :one
 -- Position is only known for goalkeepers (lineup role); never downgrade a known one to NULL.
-INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, photo_source_url, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
     nationality = coalesce(EXCLUDED.nationality, players.nationality),
     team_id = EXCLUDED.team_id,
     shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
     position = coalesce(EXCLUDED.position, players.position),
+    -- A new photo source clears the stored copy so the ingestor downloads it again.
+    photo_url = CASE WHEN EXCLUDED.photo_source_url IS NOT NULL AND EXCLUDED.photo_source_url IS DISTINCT FROM players.photo_source_url
+                     THEN NULL ELSE players.photo_url END,
+    photo_source_url = coalesce(EXCLUDED.photo_source_url, players.photo_source_url),
     updated_at = now()
 RETURNING id;
 
@@ -46,3 +50,12 @@ WHERE m.status = 'finished'
   AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
 ORDER BY m.match_time DESC
 LIMIT $1;
+
+-- name: ListPlayersMissingPhoto :many
+SELECT id, flashscore_id, photo_source_url::text AS photo_source_url
+FROM players
+WHERE photo_url IS NULL AND photo_source_url IS NOT NULL
+LIMIT $1;
+
+-- name: SetPlayerPhoto :exec
+UPDATE players SET photo_url = $2 WHERE id = $1;

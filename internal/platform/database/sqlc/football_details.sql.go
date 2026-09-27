@@ -53,6 +53,53 @@ func (q *Queries) ListMatchesMissingDetails(ctx context.Context, limit int32) ([
 	return items, nil
 }
 
+const listPlayersMissingPhoto = `-- name: ListPlayersMissingPhoto :many
+SELECT id, flashscore_id, photo_source_url::text AS photo_source_url
+FROM players
+WHERE photo_url IS NULL AND photo_source_url IS NOT NULL
+LIMIT $1
+`
+
+type ListPlayersMissingPhotoRow struct {
+	ID             pgtype.UUID
+	FlashscoreID   string
+	PhotoSourceUrl string
+}
+
+func (q *Queries) ListPlayersMissingPhoto(ctx context.Context, limit int32) ([]ListPlayersMissingPhotoRow, error) {
+	rows, err := q.db.Query(ctx, listPlayersMissingPhoto, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPlayersMissingPhotoRow
+	for rows.Next() {
+		var i ListPlayersMissingPhotoRow
+		if err := rows.Scan(&i.ID, &i.FlashscoreID, &i.PhotoSourceUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setPlayerPhoto = `-- name: SetPlayerPhoto :exec
+UPDATE players SET photo_url = $2 WHERE id = $1
+`
+
+type SetPlayerPhotoParams struct {
+	ID       pgtype.UUID
+	PhotoUrl pgtype.Text
+}
+
+func (q *Queries) SetPlayerPhoto(ctx context.Context, arg SetPlayerPhotoParams) error {
+	_, err := q.db.Exec(ctx, setPlayerPhoto, arg.ID, arg.PhotoUrl)
+	return err
+}
+
 const upsertLineup = `-- name: UpsertLineup :exec
 INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter)
 VALUES ($1, $2, $3, $4, $5)
@@ -140,25 +187,30 @@ func (q *Queries) UpsertMatchStats(ctx context.Context, arg UpsertMatchStatsPara
 }
 
 const upsertPlayer = `-- name: UpsertPlayer :one
-INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
+INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, photo_source_url, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
     nationality = coalesce(EXCLUDED.nationality, players.nationality),
     team_id = EXCLUDED.team_id,
     shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
     position = coalesce(EXCLUDED.position, players.position),
+    -- A new photo source clears the stored copy so the ingestor downloads it again.
+    photo_url = CASE WHEN EXCLUDED.photo_source_url IS NOT NULL AND EXCLUDED.photo_source_url IS DISTINCT FROM players.photo_source_url
+                     THEN NULL ELSE players.photo_url END,
+    photo_source_url = coalesce(EXCLUDED.photo_source_url, players.photo_source_url),
     updated_at = now()
 RETURNING id
 `
 
 type UpsertPlayerParams struct {
-	FlashscoreID string
-	TeamID       pgtype.UUID
-	Name         string
-	Nationality  pgtype.Text
-	ShirtNumber  pgtype.Int2
-	Position     pgtype.Text
+	FlashscoreID   string
+	TeamID         pgtype.UUID
+	Name           string
+	Nationality    pgtype.Text
+	ShirtNumber    pgtype.Int2
+	Position       pgtype.Text
+	PhotoSourceUrl pgtype.Text
 }
 
 // Position is only known for goalkeepers (lineup role); never downgrade a known one to NULL.
@@ -170,6 +222,7 @@ func (q *Queries) UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) (pgt
 		arg.Nationality,
 		arg.ShirtNumber,
 		arg.Position,
+		arg.PhotoSourceUrl,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
