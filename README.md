@@ -32,12 +32,25 @@ Kontrak lengkap: [`openapi.yaml`](openapi.yaml). Base path: `/api/v1`. Semua err
 |---|---|---|---|
 | GET | `/health` | - | Liveness |
 | GET | `/ready` | - | Readiness (ping DB; 503 saat drain) |
-
-Endpoint domain (pertandingan, klasemen, berita) belum ada; rencana di [`docs/development-plan/api-contract-plan.md`](docs/development-plan/api-contract-plan.md).
+| GET | `/api/v1/matches?date=DD.MM.YYYY&teamId=&status=` | - | Pertandingan per tanggal (WIB) |
+| GET | `/api/v1/matches/{id}` | - | Detail: kejadian, statistik, susunan pemain |
+| GET | `/api/v1/matches/stream` | - | SSE: event `score` dan `match_event` |
+| GET | `/api/v1/standings?season=` | - | Klasemen, dihitung dari hasil |
+| GET | `/api/v1/teams/{id}` | - | Profil tim, skuad, 5 laga terakhir/berikutnya |
+| GET | `/api/v1/players/{id}` | - | Profil pemain, total musim, log pertandingan |
+| GET | `/api/v1/search?q=` | - | Cari tim, pemain, berita (tahan salah ketik) |
+| GET | `/api/v1/news?matchId=&teamId=&playerId=&cursor=&limit=` | - | Berita terbit, pagination cursor |
+| GET | `/api/v1/news/{slug}` | - | Detail berita |
+| POST | `/api/v1/auth/login` | - | Set cookie sesi; 10 percobaan/menit/IP |
+| POST | `/api/v1/auth/logout` | - | Hapus sesi |
+| GET | `/api/v1/me` | sesi | User yang login |
+| GET, POST | `/api/v1/admin/news` | sesi admin | Daftar (termasuk draft), buat |
+| GET, PUT, DELETE | `/api/v1/admin/news/{id}` | sesi admin | Baca, ganti, hapus |
 
 - Rate limit per IP (`RATE_LIMIT_REQUESTS_PER_MINUTE`), melebihi batas mendapat `429 RATE_LIMITED`.
+- Akun dibuat lewat CLI: `printf '%s\n' "$PASSWORD" | go run ./cmd/useradd -email you@example.com -name You [-admin]`.
 
-Contoh request: [`http/health.http`](http/health.http).
+Contoh request: folder [`http/`](http/).
 
 ## Menjalankan
 
