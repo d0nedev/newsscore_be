@@ -12,6 +12,7 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/middleware"
 	"github.com/d0nedev/newsscore/internal/platform/stream"
 	"github.com/d0nedev/newsscore/internal/player"
+	"github.com/d0nedev/newsscore/internal/search"
 	"github.com/d0nedev/newsscore/internal/standing"
 	"github.com/d0nedev/newsscore/internal/team"
 
@@ -47,6 +48,8 @@ func modules(
 	teams := team.NewHandler(team.NewService(queries, tp.Tracer("team")))
 	players := player.NewHandler(player.NewService(queries, tp.Tracer("player")))
 
+	searcher := search.NewHandler(search.NewService(queries, tp.Tracer("search")))
+
 	matches := match.NewHandler(match.NewService(queries, tp.Tracer("match")))
 	go stream.Listen(ctx, pool, logger, match.NotifyChannel, match.Relay(hub, logger))
 
@@ -56,6 +59,7 @@ func modules(
 		func(r chi.Router) { standing.RegisterRoutes(r, standings, logger) },
 		func(r chi.Router) { team.RegisterRoutes(r, teams, logger) },
 		func(r chi.Router) { player.RegisterRoutes(r, players, logger) },
+		func(r chi.Router) { search.RegisterRoutes(r, searcher, logger) },
 		func(r chi.Router) { news.RegisterRoutes(r, newsHandler, logger, authHandler.RequireAdmin) },
 	}
 }
