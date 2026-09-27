@@ -114,6 +114,50 @@ func (q *Queries) ListNationalTeamsToScrape(ctx context.Context) ([]ListNational
 	return items, nil
 }
 
+const listSquadsToSync = `-- name: ListSquadsToSync :many
+SELECT t.id, t.flashscore_id, t.flashscore_slug::text AS flashscore_slug
+FROM teams t
+WHERE t.flashscore_slug IS NOT NULL
+  AND (t.squad_synced_at IS NULL OR t.squad_synced_at < now() - interval '1 day')
+  AND CASE WHEN t.country_id IS NULL
+      THEN EXISTS (
+          SELECT 1 FROM matches m JOIN competitions c ON c.id = m.competition_id
+          WHERE c.active AND c.scraped AND t.id IN (m.home_team_id, m.away_team_id))
+      ELSE EXISTS (
+          SELECT 1 FROM competitions c WHERE c.country_id = t.country_id AND c.active AND c.scraped)
+      END
+ORDER BY t.squad_synced_at NULLS FIRST
+LIMIT $1
+`
+
+type ListSquadsToSyncRow struct {
+	ID             pgtype.UUID
+	FlashscoreID   string
+	FlashscoreSlug string
+}
+
+// Clubs playing a scraped competition, and national teams of countries with
+// one (Indonesia), whose squad was not read in the last day, oldest first.
+func (q *Queries) ListSquadsToSync(ctx context.Context, limit int32) ([]ListSquadsToSyncRow, error) {
+	rows, err := q.db.Query(ctx, listSquadsToSync, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSquadsToSyncRow
+	for rows.Next() {
+		var i ListSquadsToSyncRow
+		if err := rows.Scan(&i.ID, &i.FlashscoreID, &i.FlashscoreSlug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTeamsMissingLogo = `-- name: ListTeamsMissingLogo :many
 SELECT id, flashscore_id, logo_source_url::text AS logo_source_url
 FROM teams
@@ -144,6 +188,15 @@ func (q *Queries) ListTeamsMissingLogo(ctx context.Context) ([]ListTeamsMissingL
 		return nil, err
 	}
 	return items, nil
+}
+
+const markSquadSynced = `-- name: MarkSquadSynced :exec
+UPDATE teams SET squad_synced_at = now() WHERE id = $1
+`
+
+func (q *Queries) MarkSquadSynced(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markSquadSynced, id)
+	return err
 }
 
 const setTeamLogo = `-- name: SetTeamLogo :exec
@@ -261,11 +314,49 @@ func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtyp
 	return id, err
 }
 
+const upsertSquadPlayer = `-- name: UpsertSquadPlayer :exec
+INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
+ON CONFLICT (flashscore_id) DO UPDATE
+SET team_id = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_id) IS NULL
+                   THEN EXCLUDED.team_id ELSE players.team_id END,
+    position = EXCLUDED.position,
+    nationality = coalesce(EXCLUDED.nationality, players.nationality),
+    shirt_number = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_id) IS NULL
+                        THEN coalesce(EXCLUDED.shirt_number, players.shirt_number) ELSE players.shirt_number END,
+    updated_at = now()
+`
+
+type UpsertSquadPlayerParams struct {
+	FlashscoreID string
+	TeamID       pgtype.UUID
+	Name         string
+	Nationality  pgtype.Text
+	ShirtNumber  pgtype.Int2
+	Position     pgtype.Text
+}
+
+// A club's squad page is its current list: it sets team, position, and number.
+// A national team's only sets position: the player keeps his club and club number.
+// The name stays as lineups write it ("Husna A. M."), so both sources agree.
+func (q *Queries) UpsertSquadPlayer(ctx context.Context, arg UpsertSquadPlayerParams) error {
+	_, err := q.db.Exec(ctx, upsertSquadPlayer,
+		arg.FlashscoreID,
+		arg.TeamID,
+		arg.Name,
+		arg.Nationality,
+		arg.ShirtNumber,
+		arg.Position,
+	)
+	return err
+}
+
 const upsertTeam = `-- name: UpsertTeam :one
-INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, country_id, updated_at)
-VALUES ($1, $2, $3, $4, $5, now())
+INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, country_id, flashscore_slug, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
+    flashscore_slug = coalesce(EXCLUDED.flashscore_slug, teams.flashscore_slug),
     -- Only national team pages know a team's country; a league page never clears it.
     country_id = coalesce(EXCLUDED.country_id, teams.country_id),
     short_name = EXCLUDED.short_name,
@@ -277,11 +368,12 @@ RETURNING id
 `
 
 type UpsertTeamParams struct {
-	FlashscoreID  string
-	Name          string
-	ShortName     string
-	LogoSourceUrl pgtype.Text
-	CountryID     pgtype.UUID
+	FlashscoreID   string
+	Name           string
+	ShortName      string
+	LogoSourceUrl  pgtype.Text
+	CountryID      pgtype.UUID
+	FlashscoreSlug pgtype.Text
 }
 
 func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (pgtype.UUID, error) {
@@ -291,6 +383,7 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (pgtype.
 		arg.ShortName,
 		arg.LogoSourceUrl,
 		arg.CountryID,
+		arg.FlashscoreSlug,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

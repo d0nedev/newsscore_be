@@ -256,3 +256,58 @@ func parseRecords(data string) []map[string]string {
 	}
 	return out
 }
+
+// SquadPlayer is one row of a team's squad page.
+type SquadPlayer struct {
+	FlashscoreID string
+	Name         string
+	Nationality  string
+	ShirtNumber  int
+	Position     string // GK, DF, MF, FW
+}
+
+var (
+	squadSection = regexp.MustCompile(`lineupTable__title">([^<]*)<`)
+	squadRow     = regexp.MustCompile(`(?s)lineupTable__cell--jersey">\s*(\d*)\s*</div>.*?(?:title="([^"]*)"></div>.*?)?href="/player/[^/]+/([A-Za-z0-9]+)/">\s*([^<]*?)\s*</a>`)
+	squadRoles   = map[string]string{"Goalkeepers": "GK", "Defenders": "DF", "Midfielders": "MF", "Forwards": "FW"}
+)
+
+// ScrapeSquad reads a team's squad page, e.g. path "/team/persik-kediri/MDFOmQ7H/squad/".
+func ScrapeSquad(path string) ([]SquadPlayer, error) {
+	html, err := fetchPage(path)
+	if err != nil {
+		return nil, err
+	}
+	players := parseSquad(html)
+	if len(players) == 0 {
+		return nil, fmt.Errorf("no players on squad page")
+	}
+	return players, nil
+}
+
+// parseSquad reads the squad tables: a title (Goalkeepers, ..., Coach) then its
+// rows. The page repeats the tables per competition; the first row of a player wins.
+func parseSquad(html string) []SquadPlayer {
+	titles := squadSection.FindAllStringSubmatchIndex(html, -1)
+	seen := make(map[string]bool)
+	var players []SquadPlayer
+	for i, t := range titles {
+		role, ok := squadRoles[html[t[2]:t[3]]]
+		if !ok {
+			continue // Coach
+		}
+		end := len(html)
+		if i+1 < len(titles) {
+			end = titles[i+1][0]
+		}
+		for _, r := range squadRow.FindAllStringSubmatch(html[t[1]:end], -1) {
+			if seen[r[3]] {
+				continue
+			}
+			seen[r[3]] = true
+			number, _ := strconv.Atoi(r[1])
+			players = append(players, SquadPlayer{FlashscoreID: r[3], Name: r[4], Nationality: r[2], ShirtNumber: number, Position: role})
+		}
+	}
+	return players
+}

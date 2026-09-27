@@ -146,14 +146,16 @@ type Session struct {
 }
 
 type Team struct {
-	ID            pgtype.UUID
-	FlashscoreID  string
-	Name          string
-	ShortName     string
-	LogoUrl       pgtype.Text
-	UpdatedAt     pgtype.Timestamptz
-	LogoSourceUrl pgtype.Text
-	CountryID     pgtype.UUID
+	ID             pgtype.UUID
+	FlashscoreID   string
+	Name           string
+	ShortName      string
+	LogoUrl        pgtype.Text
+	UpdatedAt      pgtype.Timestamptz
+	LogoSourceUrl  pgtype.Text
+	CountryID      pgtype.UUID
+	FlashscoreSlug pgtype.Text
+	SquadSyncedAt  pgtype.Timestamptz
 }
 
 type User struct {

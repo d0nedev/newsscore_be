@@ -98,7 +98,7 @@ type SquadPlayer struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Number      int    `json:"number,omitempty"`
-	Position    string `json:"position,omitempty"` // only "GK" is known from the source
+	Position    string `json:"position,omitempty"` // GK, DF, MF, FW
 	Nationality string `json:"nationality,omitempty"`
 	Photo       string `json:"photo,omitempty"` // local /assets path
 	Matches     int32  `json:"matches"`

@@ -56,6 +56,9 @@ func (w *Worker) Sync(ctx context.Context) error {
 	if err := w.syncNationalTeams(ctx); err != nil {
 		w.logger.Error("sync national teams failed", slog.Any("error", err))
 	}
+	if err := w.syncSquads(ctx); err != nil {
+		w.logger.Error("sync squads failed", slog.Any("error", err))
+	}
 	if err := w.syncImages(ctx); err != nil {
 		w.logger.Error("sync images failed", slog.Any("error", err))
 	}
@@ -237,11 +240,12 @@ func (w *Worker) upsertTeams(ctx context.Context, teams []domain.Team, national 
 			}
 		}
 		id, err := w.db.UpsertTeam(ctx, db.UpsertTeamParams{
-			FlashscoreID:  t.FlashscoreID,
-			Name:          t.Name,
-			ShortName:     t.ShortName,
-			LogoSourceUrl: optText(t.LogoURL),
-			CountryID:     country,
+			FlashscoreID:   t.FlashscoreID,
+			Name:           t.Name,
+			ShortName:      t.ShortName,
+			LogoSourceUrl:  optText(t.LogoURL),
+			CountryID:      country,
+			FlashscoreSlug: optText(t.Slug),
 		})
 		if err != nil {
 			w.logger.Error("upsert team failed", slog.String("team", t.Name), slog.Any("error", err))
@@ -278,6 +282,50 @@ func (w *Worker) upsertMatch(ctx context.Context, m domain.Match, competition pg
 	if err != nil {
 		w.logger.Error("upsert match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
 	}
+}
+
+// squadsPerRun caps squad pages per league sync; each club is read about once a day.
+const squadsPerRun = 10
+
+// syncSquads reads squad pages for player positions (lineups only mark
+// goalkeepers): clubs, plus squad players who have not played yet, and our
+// national team (positions only, see UpsertSquadPlayer).
+func (w *Worker) syncSquads(ctx context.Context) error {
+	teams, err := w.db.ListSquadsToSync(ctx, squadsPerRun)
+	if err != nil {
+		return fmt.Errorf("list squads to sync: %w", err)
+	}
+
+	for _, t := range teams {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		time.Sleep(time.Second)
+
+		path := "/team/" + t.FlashscoreSlug + "/" + t.FlashscoreID + "/squad/"
+		players, err := flashscore.ScrapeSquad(path)
+		if err != nil {
+			// Not marked synced: retried next run.
+			w.logger.Error("scrape squad failed", slog.String("path", path), slog.Any("error", err))
+			continue
+		}
+		for _, p := range players {
+			if err := w.db.UpsertSquadPlayer(ctx, db.UpsertSquadPlayerParams{
+				FlashscoreID: p.FlashscoreID,
+				TeamID:       t.ID,
+				Name:         p.Name,
+				Nationality:  optText(p.Nationality),
+				ShirtNumber:  pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0},
+				Position:     optText(p.Position),
+			}); err != nil {
+				return fmt.Errorf("upsert squad player %s: %w", p.FlashscoreID, err)
+			}
+		}
+		if err := w.db.MarkSquadSynced(ctx, t.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // slugify turns a region name into a slug: "Asia" -> "asia", "North & Central America" -> "north-central-america".

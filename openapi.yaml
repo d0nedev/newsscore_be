@@ -546,7 +546,7 @@ components:
               id: { type: string, format: uuid }
               name: { type: string }
               number: { type: integer }
-              position: { type: string, description: 'Only "GK" is known from the source' }
+              position: { type: string, enum: [GK, DF, MF, FW] }
               nationality: { type: string }
               photo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
               matches: { type: integer, description: Starts plus substitute appearances }

@@ -133,3 +133,26 @@ func TestParseFeedsTeamPage(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSquad(t *testing.T) {
+	row := func(number, country, id, name string) string {
+		return `<div class="lineupTable__row"><div class="lineupTable__cell lineupTable__cell--jersey">` + number + `</div>` +
+			`<div class="lineupTable__cell--flag flag fl_228" title="` + country + `"></div>` +
+			`<a class="lineupTable__cell--name" href="/player/x/` + id + `/">` + name + `</a></div>`
+	}
+	table := `<div class="lineupTable__title">Goalkeepers</div>` + row("33", "Indonesia", "vy7eaNdG", "Al Malik Husna") +
+		`<div class="lineupTable__title">Forwards</div>` + row("", "Brazil", "vRktJf5L", "Rendy") +
+		`<div class="lineupTable__title">Coach</div>` + row("", "Indonesia", "c0achId1", "Coach")
+	// The page repeats the tables per competition.
+	players := parseSquad(table + table)
+
+	if len(players) != 2 {
+		t.Fatalf("players = %+v", players)
+	}
+	if p := players[0]; p.Position != "GK" || p.ShirtNumber != 33 || p.Nationality != "Indonesia" || p.Name != "Al Malik Husna" {
+		t.Errorf("goalkeeper = %+v", p)
+	}
+	if p := players[1]; p.Position != "FW" || p.ShirtNumber != 0 || p.FlashscoreID != "vRktJf5L" {
+		t.Errorf("forward = %+v", p)
+	}
+}
