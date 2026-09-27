@@ -155,14 +155,23 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) error {
 	}{out})
 }
 
+// ParseSeason reads an optional ?season= year; 0 means the latest season.
+func ParseSeason(r *http.Request) (int16, error) {
+	v := r.URL.Query().Get("season")
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 16)
+	if err != nil || n < 1900 {
+		return 0, apperror.Validation("season must be a year, e.g. 2026")
+	}
+	return int16(n), nil
+}
+
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
-	var season int16
-	if v := r.URL.Query().Get("season"); v != "" {
-		n, err := strconv.ParseInt(v, 10, 16)
-		if err != nil || n < 1900 {
-			return apperror.Validation("season must be a year, e.g. 2026")
-		}
-		season = int16(n)
+	season, err := ParseSeason(r)
+	if err != nil {
+		return err
 	}
 
 	t, err := h.service.Get(r.Context(), chi.URLParam(r, "slug"), season)
@@ -245,17 +254,24 @@ func splitGroups(rows []db.ListStandingsRow, pairings []db.ListGroupPairingsRow)
 	return out
 }
 
-// Scope resolves an optional ?leagueId= for pages that span competitions (team,
-// player): with a slug it is that competition and its latest season; without,
-// every competition in the latest season overall (competition id NULL).
-func Scope(ctx context.Context, queries *db.Queries, slug string) (pgtype.UUID, int16, error) {
+// Scope resolves an optional ?leagueId= and ?season= for pages that span
+// competitions (team, player): with a slug it is that competition, without it
+// every competition (competition id NULL). Season 0 means the latest one with
+// a finished match, of that competition or overall.
+func Scope(ctx context.Context, queries *db.Queries, slug string, season int16) (pgtype.UUID, int16, error) {
 	if slug == "" {
+		if season != 0 {
+			return pgtype.UUID{}, season, nil
+		}
 		season, err := queries.LatestSeason(ctx)
 		return pgtype.UUID{}, season, err
 	}
 	c, err := queries.GetCompetition(ctx, slug)
 	if database.IsNotFound(err) {
 		return pgtype.UUID{}, 0, apperror.NotFound(CodeLeagueNotFound, "league not found")
+	}
+	if season != 0 {
+		c.Season = season
 	}
 	return c.ID, c.Season, err
 }

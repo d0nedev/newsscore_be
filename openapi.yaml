@@ -283,7 +283,7 @@ paths:
         finished match appear with zeros. Cups return an empty `standings`.
       parameters:
         - { name: id, in: path, required: true, description: "Slug, e.g. super-league", schema: { type: string } }
-        - { name: season, in: query, description: Year; defaults to the latest season with matches, schema: { type: integer, example: 2026 } }
+        - { name: season, in: query, description: Year; defaults to the latest season with a finished match, schema: { type: integer, example: 2026 } }
       responses:
         "200":
           description: OK
@@ -307,6 +307,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: leagueId, in: query, description: "Competition slug; its latest season", schema: { type: string } }
+        - { name: season, in: query, description: Year; defaults to the latest season with a finished match, schema: { type: integer, example: 2026 } }
       responses:
         "200":
           description: OK
@@ -330,6 +331,7 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: leagueId, in: query, description: "Competition slug; its latest season", schema: { type: string } }
+        - { name: season, in: query, description: Year; defaults to the latest season with a finished match, schema: { type: integer, example: 2026 } }
       responses:
         "200":
           description: OK

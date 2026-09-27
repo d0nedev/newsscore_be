@@ -36,7 +36,7 @@ func NewService(queries *db.Queries, tracer trace.Tracer) *Service {
 }
 
 // Profile covers every competition, or only leagueSlug when set.
-func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string) (db.GetPlayerRow, int16, []db.ListPlayerMatchesRow, error) {
+func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string, season int16) (db.GetPlayerRow, int16, []db.ListPlayerMatchesRow, error) {
 	ctx, span := s.tracer.Start(ctx, "PlayerService.Profile")
 	defer span.End()
 
@@ -51,7 +51,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string) 
 		}
 		return p, 0, nil, fail("failed to get player", err)
 	}
-	competition, season, err := league.Scope(ctx, s.queries, leagueSlug)
+	competition, season, err := league.Scope(ctx, s.queries, leagueSlug, season)
 	if err != nil {
 		if _, ok := errors.AsType[*apperror.Error](err); ok {
 			return p, 0, nil, err
@@ -158,7 +158,11 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 		return apperror.Validation("invalid player id")
 	}
 
-	p, season, log, err := h.service.Profile(r.Context(), id, r.URL.Query().Get("leagueId"))
+	want, err := league.ParseSeason(r)
+	if err != nil {
+		return err
+	}
+	p, season, log, err := h.service.Profile(r.Context(), id, r.URL.Query().Get("leagueId"), want)
 	if err != nil {
 		return err
 	}

@@ -43,7 +43,7 @@ type profile struct {
 }
 
 // Profile covers every competition, or only leagueSlug when set.
-func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string) (profile, error) {
+func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string, season int16) (profile, error) {
 	ctx, span := s.tracer.Start(ctx, "TeamService.Profile")
 	defer span.End()
 
@@ -59,7 +59,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string) 
 		}
 		return fail("failed to get team", err)
 	}
-	competition, season, err := league.Scope(ctx, s.queries, leagueSlug)
+	competition, season, err := league.Scope(ctx, s.queries, leagueSlug, season)
 	if err != nil {
 		if _, ok := errors.AsType[*apperror.Error](err); ok {
 			return profile{}, err
@@ -123,7 +123,11 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 		return apperror.Validation("invalid team id")
 	}
 
-	p, err := h.service.Profile(r.Context(), id, r.URL.Query().Get("leagueId"))
+	season, err := league.ParseSeason(r)
+	if err != nil {
+		return err
+	}
+	p, err := h.service.Profile(r.Context(), id, r.URL.Query().Get("leagueId"), season)
 	if err != nil {
 		return err
 	}

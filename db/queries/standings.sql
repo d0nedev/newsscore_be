@@ -1,10 +1,13 @@
 -- name: LatestSeason :one
-SELECT coalesce(max(season), 0)::smallint FROM matches;
+-- The latest season with a finished match: fixtures already stored for next
+-- year (Asian Cup 2027) must not empty every page. Any season before the first result.
+SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season), 0)::smallint FROM matches;
 
 -- name: ListCompetitions :many
 -- Each competition with its latest season (0 until the ingestor has stored a match).
 SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
-       coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
+       coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
+                 FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 JOIN countries n ON n.id = c.country_id
 WHERE c.active
@@ -12,7 +15,8 @@ ORDER BY n.sort_order, c.sort_order;
 
 -- name: GetCompetition :one
 SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
-       coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
+       coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
+                 FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 JOIN countries n ON n.id = c.country_id
 WHERE c.slug = $1;
