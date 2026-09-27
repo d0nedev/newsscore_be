@@ -14,12 +14,18 @@ type Competition struct {
 	ID             pgtype.UUID
 	Slug           string
 	Name           string
-	Country        string
 	Type           string
 	FlashscorePath string
 	Active         bool
 	SortOrder      int16
-	CountrySlug    string
+	CountryID      pgtype.UUID
+}
+
+type Country struct {
+	ID        pgtype.UUID
+	Slug      string
+	Name      string
+	SortOrder int16
 }
 
 type Match struct {
@@ -146,6 +152,7 @@ type Team struct {
 	LogoUrl       pgtype.Text
 	UpdatedAt     pgtype.Timestamptz
 	LogoSourceUrl pgtype.Text
+	CountryID     pgtype.UUID
 }
 
 type User struct {

@@ -8,3 +8,4 @@
 /deploy/backups/
 .claude/settings.local.json
 /docs/graphify-out/
+__debug_bin*

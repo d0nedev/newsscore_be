@@ -192,7 +192,9 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
     nationality = coalesce(EXCLUDED.nationality, players.nationality),
-    team_id = EXCLUDED.team_id,
+    -- team_id is the club: a national team match keeps the club the player already has.
+    team_id = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_id) IS NULL
+                   THEN EXCLUDED.team_id ELSE players.team_id END,
     shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
     position = coalesce(EXCLUDED.position, players.position),
     -- A new photo source clears the stored copy so the ingestor downloads it again.

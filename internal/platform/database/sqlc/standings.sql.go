@@ -12,9 +12,10 @@ import (
 )
 
 const getCompetition = `-- name: GetCompetition :one
-SELECT c.id, c.slug, c.name, c.country, c.country_slug, c.type,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type,
        coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
+JOIN countries n ON n.id = c.country_id
 WHERE c.slug = $1
 `
 
@@ -55,11 +56,12 @@ func (q *Queries) LatestSeason(ctx context.Context) (int16, error) {
 }
 
 const listCompetitions = `-- name: ListCompetitions :many
-SELECT c.id, c.slug, c.name, c.country, c.country_slug, c.type,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type,
        coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
+JOIN countries n ON n.id = c.country_id
 WHERE c.active
-ORDER BY c.sort_order
+ORDER BY n.sort_order, c.sort_order
 `
 
 type ListCompetitionsRow struct {
