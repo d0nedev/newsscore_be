@@ -22,18 +22,3 @@ type Match struct {
 	StageStartedAt       time.Time // live minute = now - StageStartedAt (+45 in the 2nd half)
 	UpdatedAt            time.Time
 }
-
-type Standing struct {
-	Season  int
-	TeamID  string
-	Rank    int
-	Points  int
-	Form    string
-	Zone    string
-	Matches int
-	Wins    int
-	Draws   int
-	Losses  int
-	GF      int
-	GA      int
-}

@@ -125,38 +125,6 @@ func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtyp
 	return id, err
 }
 
-const upsertStanding = `-- name: UpsertStanding :exec
-INSERT INTO standings (season, team_id, rank, points, form, zone, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
-ON CONFLICT (season, team_id) DO UPDATE
-SET rank = EXCLUDED.rank,
-    points = EXCLUDED.points,
-    form = EXCLUDED.form,
-    zone = EXCLUDED.zone,
-    updated_at = now()
-`
-
-type UpsertStandingParams struct {
-	Season int16
-	TeamID pgtype.UUID
-	Rank   int16
-	Points int16
-	Form   pgtype.Text
-	Zone   pgtype.Text
-}
-
-func (q *Queries) UpsertStanding(ctx context.Context, arg UpsertStandingParams) error {
-	_, err := q.db.Exec(ctx, upsertStanding,
-		arg.Season,
-		arg.TeamID,
-		arg.Rank,
-		arg.Points,
-		arg.Form,
-		arg.Zone,
-	)
-	return err
-}
-
 const upsertTeam = `-- name: UpsertTeam :one
 INSERT INTO teams (flashscore_id, name, short_name, logo_url, updated_at)
 VALUES ($1, $2, $3, $4, now())

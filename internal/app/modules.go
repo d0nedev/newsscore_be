@@ -11,6 +11,7 @@ import (
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/platform/middleware"
 	"github.com/d0nedev/newsscore/internal/platform/stream"
+	"github.com/d0nedev/newsscore/internal/standing"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,12 +40,15 @@ func modules(
 
 	newsHandler := news.NewHandler(news.NewService(pool, queries, tp.Tracer("news")))
 
+	standings := standing.NewHandler(standing.NewService(queries, tp.Tracer("standing")))
+
 	matches := match.NewHandler(match.NewService(queries, tp.Tracer("match")))
 	go stream.Listen(ctx, pool, logger, match.NotifyChannel, match.Relay(hub, logger))
 
 	return []func(chi.Router){
 		func(r chi.Router) { match.RegisterRoutes(r, matches, hub, logger) },
 		func(r chi.Router) { auth.RegisterRoutes(r, authHandler, logger, loginLimit) },
+		func(r chi.Router) { standing.RegisterRoutes(r, standings, logger) },
 		func(r chi.Router) { news.RegisterRoutes(r, newsHandler, logger, authHandler.RequireAdmin) },
 	}
 }

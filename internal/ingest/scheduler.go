@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sort"
 
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
@@ -61,8 +60,6 @@ func (w *Worker) syncLeague(ctx context.Context) error {
 		teamIDs[t.FlashscoreID] = id
 	}
 
-	stats := make(map[pgtype.UUID]*db.UpsertStandingParams)
-
 	for _, m := range matches {
 		homeID, okHome := teamIDs[m.HomeTeamFlashscoreID]
 		awayID, okAway := teamIDs[m.AwayTeamFlashscoreID]
@@ -70,11 +67,10 @@ func (w *Worker) syncLeague(ctx context.Context) error {
 			w.logger.Warn("skip match: team not stored", slog.String("match", m.FlashscoreID))
 			continue
 		}
-		season := int16(m.Season)
 
 		_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
 			FlashscoreID:   m.FlashscoreID,
-			Season:         season,
+			Season:         int16(m.Season),
 			HomeTeamID:     homeID,
 			AwayTeamID:     awayID,
 			Status:         m.Status,
@@ -86,44 +82,6 @@ func (w *Worker) syncLeague(ctx context.Context) error {
 		})
 		if err != nil {
 			w.logger.Error("upsert match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
-			continue
-		}
-
-		if m.Status == "finished" {
-			if stats[homeID] == nil {
-				stats[homeID] = &db.UpsertStandingParams{TeamID: homeID, Season: season}
-			}
-			if stats[awayID] == nil {
-				stats[awayID] = &db.UpsertStandingParams{TeamID: awayID, Season: season}
-			}
-
-			sh := stats[homeID]
-			sa := stats[awayID]
-
-			if m.HomeScore > m.AwayScore {
-				sh.Points += 3
-			} else if m.HomeScore < m.AwayScore {
-				sa.Points += 3
-			} else {
-				sh.Points += 1
-				sa.Points += 1
-			}
-		}
-	}
-
-	var standings []*db.UpsertStandingParams
-	for _, v := range stats {
-		standings = append(standings, v)
-	}
-
-	sort.Slice(standings, func(i, j int) bool {
-		return standings[i].Points > standings[j].Points
-	})
-
-	for i, st := range standings {
-		st.Rank = int16(i + 1)
-		if err := w.db.UpsertStanding(ctx, *st); err != nil {
-			w.logger.Error("upsert standing failed", slog.String("team", st.TeamID.String()), slog.Any("error", err))
 		}
 	}
 

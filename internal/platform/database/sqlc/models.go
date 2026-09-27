@@ -84,16 +84,6 @@ type Session struct {
 	Ip        *netip.Addr
 }
 
-type Standing struct {
-	Season    int16
-	TeamID    pgtype.UUID
-	Rank      int16
-	Points    int16
-	Form      pgtype.Text
-	Zone      pgtype.Text
-	UpdatedAt pgtype.Timestamptz
-}
-
 type Team struct {
 	ID           pgtype.UUID
 	FlashscoreID string

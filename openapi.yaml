@@ -17,6 +17,8 @@ tags:
     description: "Login with an HttpOnly session cookie (`session`). Browsers must send `credentials: include`."
   - name: news
     description: Berita. `/admin/news` needs a session with the admin role.
+  - name: standings
+    description: League table, computed from finished matches.
   - name: matches
     description: Pertandingan sepak bola. Tanggal dalam zona WIB.
   - name: health
@@ -248,6 +250,32 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /api/v1/standings:
+    get:
+      tags: [standings]
+      operationId: getStandings
+      summary: League table for a season
+      description: Ranked by points, goal difference, then goals scored. Teams with no finished match yet appear with zeros.
+      parameters:
+        - { name: season, in: query, description: Year; defaults to the latest season with matches, schema: { type: integer, example: 2026 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [season, rows]
+                    properties:
+                      season: { type: integer }
+                      rows: { type: array, items: { $ref: "#/components/schemas/StandingRow" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /api/v1/matches:
     get:
       tags: [matches]
@@ -359,6 +387,28 @@ components:
       description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
+    StandingRow:
+      type: object
+      required: [position, teamId, team, badge, played, won, drawn, lost, goalsFor, goalsAgainst, points, form]
+      properties:
+        position: { type: integer }
+        teamId: { type: string, format: uuid }
+        team: { type: string }
+        badge: { type: string }
+        logo: { type: string, format: uri }
+        played: { type: integer }
+        won: { type: integer }
+        drawn: { type: integer }
+        lost: { type: integer }
+        goalsFor: { type: integer }
+        goalsAgainst: { type: integer }
+        points: { type: integer }
+        form:
+          type: array
+          description: Last five results, newest first
+          maxItems: 5
+          items: { type: string, enum: [W, D, L] }
+
     NewsItem:
       type: object
       required: [id, category, title, summary, published, publishedAt]

@@ -22,15 +22,6 @@ SET status = EXCLUDED.status,
     updated_at = now()
 RETURNING id;
 
--- name: UpsertStanding :exec
-INSERT INTO standings (season, team_id, rank, points, form, zone, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, now())
-ON CONFLICT (season, team_id) DO UPDATE
-SET rank = EXCLUDED.rank,
-    points = EXCLUDED.points,
-    form = EXCLUDED.form,
-    zone = EXCLUDED.zone,
-    updated_at = now();
 
 -- name: ListLiveCandidates :many
 -- Live matches, plus scheduled ones whose kick-off has passed but the league page has not caught up.
