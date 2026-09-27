@@ -3,7 +3,9 @@ package app
 import (
 	"log/slog"
 
+	"github.com/d0nedev/newsscore/internal/match"
 	"github.com/d0nedev/newsscore/internal/platform/config"
+	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,5 +20,11 @@ func modules(
 	pool *pgxpool.Pool,
 	tp trace.TracerProvider,
 ) []func(chi.Router) {
-	return nil
+	queries := db.New(pool)
+
+	matches := match.NewHandler(match.NewService(queries, tp.Tracer("match")))
+
+	return []func(chi.Router){
+		func(r chi.Router) { match.RegisterRoutes(r, matches, logger) },
+	}
 }

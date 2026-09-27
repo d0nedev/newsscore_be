@@ -13,12 +13,59 @@ servers:
     description: Local
 
 tags:
+  - name: matches
+    description: Pertandingan sepak bola. Tanggal dalam zona WIB.
   - name: health
     description: Liveness and readiness probes for orchestrators and load balancers.
 
 security: []
 
 paths:
+  /api/v1/matches:
+    get:
+      tags: [matches]
+      operationId: listMatches
+      summary: Pertandingan pada satu tanggal (WIB), urut jam kick-off
+      parameters:
+        - { name: date, in: query, description: "`DD.MM.YYYY`, default hari ini (WIB)", schema: { type: string, example: "14.09.2026" } }
+        - { name: teamId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/MatchStatus" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Match" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/matches/{id}:
+    get:
+      tags: [matches]
+      operationId: getMatch
+      summary: Detail pertandingan dengan kejadian dan statistik
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/MatchDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /health:
     get:
       tags: [health]
@@ -57,6 +104,60 @@ components:
       description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
+    MatchStatus:
+      type: string
+      enum: [scheduled, live, finished]
+
+    Team:
+      type: object
+      required: [id, name, badge]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        badge: { type: string, description: 'Kode singkat, mis. "PER"' }
+        logo: { type: string, format: uri }
+
+    Match:
+      type: object
+      required: [id, status, time, date, home, away, score]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/MatchStatus" }
+        time: { type: string, description: 'Jam kick-off WIB "HH:MM", atau "LIVE"' }
+        date: { type: string, description: '"DD.MM.YYYY" (WIB)' }
+        home: { $ref: "#/components/schemas/Team" }
+        away: { $ref: "#/components/schemas/Team" }
+        score:
+          type: [array, "null"]
+          items: { type: integer }
+          minItems: 2
+          maxItems: 2
+
+    MatchDetail:
+      allOf:
+        - $ref: "#/components/schemas/Match"
+        - type: object
+          required: [events, stats]
+          properties:
+            events:
+              type: array
+              items:
+                type: object
+                required: [minute, team, type, player]
+                properties:
+                  minute: { type: string, example: "45+2'" }
+                  team: { type: string, enum: [home, away, ""] }
+                  type: { type: string, description: "goal, yellow, red, sub, atau jenis mentah dari sumber" }
+                  player: { type: string }
+            stats:
+              type: array
+              items:
+                type: object
+                properties:
+                  label: { type: string }
+                  home: { type: string }
+                  away: { type: string }
+
     ProbeStatus:
       type: object
       required: [status]
@@ -91,7 +192,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     NotFound:
-      description: "`NOT_FOUND`"
+      description: "`NOT_FOUND`, `MATCH_NOT_FOUND`"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -106,7 +207,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     InternalError:
-      description: "Unexpected failure (`INTERNAL_SERVER_ERROR`)"
+      description: "Unexpected failure (`INTERNAL_SERVER_ERROR`, `MATCH_QUERY_FAILED`)"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
