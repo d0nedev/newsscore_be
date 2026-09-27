@@ -12,7 +12,7 @@ import (
 )
 
 const getCompetition = `-- name: GetCompetition :one
-SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
        coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 JOIN countries n ON n.id = c.country_id
@@ -26,6 +26,7 @@ type GetCompetitionRow struct {
 	Country     string
 	CountrySlug string
 	Type        string
+	Scraped     bool
 	Season      int16
 }
 
@@ -39,6 +40,7 @@ func (q *Queries) GetCompetition(ctx context.Context, slug string) (GetCompetiti
 		&i.Country,
 		&i.CountrySlug,
 		&i.Type,
+		&i.Scraped,
 		&i.Season,
 	)
 	return i, err
@@ -56,7 +58,7 @@ func (q *Queries) LatestSeason(ctx context.Context) (int16, error) {
 }
 
 const listCompetitions = `-- name: ListCompetitions :many
-SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
        coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 JOIN countries n ON n.id = c.country_id
@@ -71,6 +73,7 @@ type ListCompetitionsRow struct {
 	Country     string
 	CountrySlug string
 	Type        string
+	Scraped     bool
 	Season      int16
 }
 
@@ -91,6 +94,7 @@ func (q *Queries) ListCompetitions(ctx context.Context) ([]ListCompetitionsRow, 
 			&i.Country,
 			&i.CountrySlug,
 			&i.Type,
+			&i.Scraped,
 			&i.Season,
 		); err != nil {
 			return nil, err

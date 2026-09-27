@@ -180,6 +180,10 @@ func withTable(t table) League {
 	c := t.Competition
 	standings := []Row{}
 	out := League{ID: c.Slug, Name: c.Name, Country: c.Country, CountryID: c.CountrySlug, Type: c.Type, Season: int(c.Season), Standings: &standings}
+	if !c.Scraped {
+		// Only our national team's matches are stored: a table would be wrong.
+		return out
+	}
 	if c.Type == "league" {
 		standings = toRows(t.Rows)
 	} else {

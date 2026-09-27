@@ -1,8 +1,10 @@
 -- name: UpsertTeam :one
-INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, updated_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, country_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
+    -- Only national team pages know a team's country; a league page never clears it.
+    country_id = coalesce(EXCLUDED.country_id, teams.country_id),
     short_name = EXCLUDED.short_name,
     -- A new source clears the stored copy so the ingestor downloads it again.
     logo_url = CASE WHEN teams.logo_source_url IS DISTINCT FROM EXCLUDED.logo_source_url THEN NULL ELSE teams.logo_url END,
@@ -42,7 +44,26 @@ SET status = $2, stage = $3, stage_started_at = $4, home_score = $5, away_score 
 WHERE id = $1;
 
 -- name: ListActiveCompetitions :many
-SELECT id, slug, flashscore_path FROM competitions WHERE active ORDER BY sort_order;
+SELECT id, slug, flashscore_path FROM competitions WHERE active AND scraped ORDER BY sort_order;
+
+-- name: ListNationalTeamsToScrape :many
+-- National teams of countries with a scraped league, e.g. Indonesia.
+SELECT t.flashscore_id, n.slug AS country_slug
+FROM teams t
+JOIN countries n ON n.id = t.country_id
+WHERE EXISTS (SELECT 1 FROM competitions c WHERE c.country_id = n.id AND c.active AND c.scraped);
+
+-- name: UpsertCountry :one
+INSERT INTO countries (slug, name) VALUES ($1, $2)
+ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
+RETURNING id;
+
+-- name: UpsertTeamPageCompetition :one
+-- A competition seen on a national team's page; see migration 0020.
+INSERT INTO competitions (slug, name, country_id, type, flashscore_path, scraped, sort_order)
+VALUES ($1, $2, $3, 'cup', $4, false, 100)
+ON CONFLICT (flashscore_path) DO UPDATE SET name = EXCLUDED.name
+RETURNING id;
 
 -- name: ListTeamsMissingLogo :many
 SELECT id, flashscore_id, logo_source_url::text AS logo_source_url

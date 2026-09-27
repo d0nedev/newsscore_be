@@ -13,6 +13,14 @@ type Team struct {
 	Name         string
 	ShortName    string
 	LogoURL      string
+	Slug         string // Flashscore URL slug; a national team's is its country's, e.g. "indonesia"
+}
+
+// Competition is the section a match is listed under on a team page.
+type Competition struct {
+	Name   string // "ASEAN Championship"
+	Path   string // "/football/asia/asean-championship/"
+	Region string // "Asia", "World", or a country
 }
 
 type Match struct {
@@ -28,4 +36,5 @@ type Match struct {
 	StageStartedAt       time.Time // live minute = now - StageStartedAt (+45 in the 2nd half)
 	Round                string    // e.g. "Round 3", "Final"
 	Phase                string    // e.g. "Play Offs"; empty for the regular season or group stage
+	Competition          Competition
 }

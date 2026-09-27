@@ -19,6 +19,7 @@ type Competition struct {
 	Active         bool
 	SortOrder      int16
 	CountryID      pgtype.UUID
+	Scraped        bool
 }
 
 type Country struct {

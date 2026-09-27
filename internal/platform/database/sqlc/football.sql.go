@@ -12,7 +12,7 @@ import (
 )
 
 const listActiveCompetitions = `-- name: ListActiveCompetitions :many
-SELECT id, slug, flashscore_path FROM competitions WHERE active ORDER BY sort_order
+SELECT id, slug, flashscore_path FROM competitions WHERE active AND scraped ORDER BY sort_order
 `
 
 type ListActiveCompetitionsRow struct {
@@ -71,6 +71,39 @@ func (q *Queries) ListLiveCandidates(ctx context.Context) ([]ListLiveCandidatesR
 			&i.HomeTeamID,
 			&i.AwayTeamID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNationalTeamsToScrape = `-- name: ListNationalTeamsToScrape :many
+SELECT t.flashscore_id, n.slug AS country_slug
+FROM teams t
+JOIN countries n ON n.id = t.country_id
+WHERE EXISTS (SELECT 1 FROM competitions c WHERE c.country_id = n.id AND c.active AND c.scraped)
+`
+
+type ListNationalTeamsToScrapeRow struct {
+	FlashscoreID string
+	CountrySlug  string
+}
+
+// National teams of countries with a scraped league, e.g. Indonesia.
+func (q *Queries) ListNationalTeamsToScrape(ctx context.Context) ([]ListNationalTeamsToScrapeRow, error) {
+	rows, err := q.db.Query(ctx, listNationalTeamsToScrape)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListNationalTeamsToScrapeRow
+	for rows.Next() {
+		var i ListNationalTeamsToScrapeRow
+		if err := rows.Scan(&i.FlashscoreID, &i.CountrySlug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -155,6 +188,24 @@ func (q *Queries) UpdateMatchLive(ctx context.Context, arg UpdateMatchLiveParams
 	return err
 }
 
+const upsertCountry = `-- name: UpsertCountry :one
+INSERT INTO countries (slug, name) VALUES ($1, $2)
+ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
+RETURNING id
+`
+
+type UpsertCountryParams struct {
+	Slug string
+	Name string
+}
+
+func (q *Queries) UpsertCountry(ctx context.Context, arg UpsertCountryParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertCountry, arg.Slug, arg.Name)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const upsertMatch = `-- name: UpsertMatch :one
 INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, round, phase, data_as_of, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
@@ -211,10 +262,12 @@ func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtyp
 }
 
 const upsertTeam = `-- name: UpsertTeam :one
-INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, updated_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO teams (flashscore_id, name, short_name, logo_source_url, country_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
+    -- Only national team pages know a team's country; a league page never clears it.
+    country_id = coalesce(EXCLUDED.country_id, teams.country_id),
     short_name = EXCLUDED.short_name,
     -- A new source clears the stored copy so the ingestor downloads it again.
     logo_url = CASE WHEN teams.logo_source_url IS DISTINCT FROM EXCLUDED.logo_source_url THEN NULL ELSE teams.logo_url END,
@@ -228,6 +281,7 @@ type UpsertTeamParams struct {
 	Name          string
 	ShortName     string
 	LogoSourceUrl pgtype.Text
+	CountryID     pgtype.UUID
 }
 
 func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (pgtype.UUID, error) {
@@ -236,6 +290,34 @@ func (q *Queries) UpsertTeam(ctx context.Context, arg UpsertTeamParams) (pgtype.
 		arg.Name,
 		arg.ShortName,
 		arg.LogoSourceUrl,
+		arg.CountryID,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const upsertTeamPageCompetition = `-- name: UpsertTeamPageCompetition :one
+INSERT INTO competitions (slug, name, country_id, type, flashscore_path, scraped, sort_order)
+VALUES ($1, $2, $3, 'cup', $4, false, 100)
+ON CONFLICT (flashscore_path) DO UPDATE SET name = EXCLUDED.name
+RETURNING id
+`
+
+type UpsertTeamPageCompetitionParams struct {
+	Slug           string
+	Name           string
+	CountryID      pgtype.UUID
+	FlashscorePath string
+}
+
+// A competition seen on a national team's page; see migration 0020.
+func (q *Queries) UpsertTeamPageCompetition(ctx context.Context, arg UpsertTeamPageCompetitionParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertTeamPageCompetition,
+		arg.Slug,
+		arg.Name,
+		arg.CountryID,
+		arg.FlashscorePath,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

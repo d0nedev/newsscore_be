@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 
+	"github.com/d0nedev/newsscore/internal/domain"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
 
@@ -48,6 +52,9 @@ func (w *Worker) Sync(ctx context.Context) error {
 			w.logger.Error("sync competition failed", slog.String("competition", c.Slug), slog.Any("error", err))
 		}
 		time.Sleep(time.Second) // same politeness gap as the feed requests
+	}
+	if err := w.syncNationalTeams(ctx); err != nil {
+		w.logger.Error("sync national teams failed", slog.Any("error", err))
 	}
 	if err := w.syncImages(ctx); err != nil {
 		w.logger.Error("sync images failed", slog.Any("error", err))
@@ -155,50 +162,129 @@ func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetition
 
 	w.logger.Info("competition scraped", slog.String("competition", c.Slug), slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
 
-	teamIDs := make(map[string]pgtype.UUID, len(teams))
+	teamIDs := w.upsertTeams(ctx, teams, false)
+	for _, m := range matches {
+		w.upsertMatch(ctx, m, c.ID, teamIDs)
+	}
+	return nil
+}
+
+// syncNationalTeams reads each national team page (Indonesia): its matches in
+// every competition it plays, friendlies included. Only these matches are
+// stored, not the rest of those competitions.
+func (w *Worker) syncNationalTeams(ctx context.Context) error {
+	nationals, err := w.db.ListNationalTeamsToScrape(ctx)
+	if err != nil {
+		return fmt.Errorf("list national teams: %w", err)
+	}
+
+	for _, n := range nationals {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		time.Sleep(time.Second)
+
+		path := "/team/" + n.CountrySlug + "/" + n.FlashscoreID + "/results/"
+		matches, teams, err := flashscore.ScrapeTeam(path)
+		if err != nil {
+			w.logger.Error("scrape national team failed", slog.String("path", path), slog.Any("error", err))
+			continue
+		}
+		w.logger.Info("national team scraped", slog.String("team", n.CountrySlug), slog.Int("matches", len(matches)))
+
+		// Every team on a national team's page is a national team too.
+		teamIDs := w.upsertTeams(ctx, teams, true)
+		competitions := make(map[string]pgtype.UUID)
+		for _, m := range matches {
+			id, ok := competitions[m.Competition.Path]
+			if !ok {
+				if id, err = w.upsertTeamPageCompetition(ctx, m.Competition); err != nil {
+					w.logger.Error("upsert competition failed", slog.String("path", m.Competition.Path), slog.Any("error", err))
+					continue
+				}
+				competitions[m.Competition.Path] = id
+			}
+			w.upsertMatch(ctx, m, id, teamIDs)
+		}
+	}
+	return nil
+}
+
+func (w *Worker) upsertTeamPageCompetition(ctx context.Context, c domain.Competition) (pgtype.UUID, error) {
+	region, err := w.db.UpsertCountry(ctx, db.UpsertCountryParams{Slug: slugify(c.Region), Name: c.Region})
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return w.db.UpsertTeamPageCompetition(ctx, db.UpsertTeamPageCompetitionParams{
+		Slug:           path.Base(c.Path), // "/football/asia/asean-championship/" -> "asean-championship"
+		Name:           c.Name,
+		CountryID:      region,
+		FlashscorePath: c.Path,
+	})
+}
+
+// upsertTeams stores teams and returns their ids by Flashscore id. national
+// marks each as its country's national team, creating the country if needed.
+func (w *Worker) upsertTeams(ctx context.Context, teams []domain.Team, national bool) map[string]pgtype.UUID {
+	ids := make(map[string]pgtype.UUID, len(teams))
 	for _, t := range teams {
+		var country pgtype.UUID
+		if national {
+			var err error
+			if country, err = w.db.UpsertCountry(ctx, db.UpsertCountryParams{Slug: t.Slug, Name: t.Name}); err != nil {
+				w.logger.Error("upsert country failed", slog.String("team", t.Name), slog.Any("error", err))
+				continue
+			}
+		}
 		id, err := w.db.UpsertTeam(ctx, db.UpsertTeamParams{
 			FlashscoreID:  t.FlashscoreID,
 			Name:          t.Name,
 			ShortName:     t.ShortName,
 			LogoSourceUrl: optText(t.LogoURL),
+			CountryID:     country,
 		})
 		if err != nil {
 			w.logger.Error("upsert team failed", slog.String("team", t.Name), slog.Any("error", err))
 			continue
 		}
-		teamIDs[t.FlashscoreID] = id
+		ids[t.FlashscoreID] = id
+	}
+	return ids
+}
+
+func (w *Worker) upsertMatch(ctx context.Context, m domain.Match, competition pgtype.UUID, teamIDs map[string]pgtype.UUID) {
+	homeID, okHome := teamIDs[m.HomeTeamFlashscoreID]
+	awayID, okAway := teamIDs[m.AwayTeamFlashscoreID]
+	if !okHome || !okAway {
+		w.logger.Warn("skip match: team not stored", slog.String("match", m.FlashscoreID))
+		return
 	}
 
-	for _, m := range matches {
-		homeID, okHome := teamIDs[m.HomeTeamFlashscoreID]
-		awayID, okAway := teamIDs[m.AwayTeamFlashscoreID]
-		if !okHome || !okAway {
-			w.logger.Warn("skip match: team not stored", slog.String("match", m.FlashscoreID))
-			continue
-		}
-
-		_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
-			FlashscoreID:   m.FlashscoreID,
-			CompetitionID:  c.ID,
-			Round:          optText(m.Round),
-			Phase:          optText(m.Phase),
-			Season:         int16(m.Season),
-			HomeTeamID:     homeID,
-			AwayTeamID:     awayID,
-			Status:         m.Status,
-			MatchTime:      pgtype.Timestamptz{Time: m.MatchTime, Valid: !m.MatchTime.IsZero()},
-			HomeScore:      pgtype.Int2{Int16: int16(m.HomeScore), Valid: m.Status != "scheduled"},
-			AwayScore:      pgtype.Int2{Int16: int16(m.AwayScore), Valid: m.Status != "scheduled"},
-			Stage:          pgtype.Int2{Int16: int16(m.Stage), Valid: m.Stage != 0},
-			StageStartedAt: pgtype.Timestamptz{Time: m.StageStartedAt, Valid: !m.StageStartedAt.IsZero()},
-		})
-		if err != nil {
-			w.logger.Error("upsert match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
-		}
+	_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
+		FlashscoreID:   m.FlashscoreID,
+		CompetitionID:  competition,
+		Round:          optText(m.Round),
+		Phase:          optText(m.Phase),
+		Season:         int16(m.Season),
+		HomeTeamID:     homeID,
+		AwayTeamID:     awayID,
+		Status:         m.Status,
+		MatchTime:      pgtype.Timestamptz{Time: m.MatchTime, Valid: !m.MatchTime.IsZero()},
+		HomeScore:      pgtype.Int2{Int16: int16(m.HomeScore), Valid: m.Status != "scheduled"},
+		AwayScore:      pgtype.Int2{Int16: int16(m.AwayScore), Valid: m.Status != "scheduled"},
+		Stage:          pgtype.Int2{Int16: int16(m.Stage), Valid: m.Stage != 0},
+		StageStartedAt: pgtype.Timestamptz{Time: m.StageStartedAt, Valid: !m.StageStartedAt.IsZero()},
+	})
+	if err != nil {
+		w.logger.Error("upsert match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
 	}
+}
 
-	return nil
+// slugify turns a region name into a slug: "Asia" -> "asia", "North & Central America" -> "north-central-america".
+func slugify(s string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), "-")
 }
 
 type statJSON struct {

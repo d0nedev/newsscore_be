@@ -3,6 +3,8 @@ package flashscore
 import (
 	"testing"
 	"time"
+
+	"github.com/d0nedev/newsscore/internal/domain"
 )
 
 // Trimmed from real feeds captured on 2026-09-27.
@@ -103,6 +105,31 @@ func TestSeasonPattern(t *testing.T) {
 		got := seasonPattern.FindStringSubmatch(html)
 		if len(got) < 2 || got[1] != want {
 			t.Errorf("%q: got %v, want %s", html, got, want)
+		}
+	}
+}
+
+// A team page quotes feed names with " and lists each match under its competition.
+func TestParseFeedsTeamPage(t *testing.T) {
+	section := "ZA÷ASIA: ASEAN Championship¬ZK÷ASEAN Championship¬ZL÷/football/asia/asean-championship/¬ZY÷Asia¬~"
+	match := "AA÷0hBlRgoL¬AD÷1790341200¬AB÷3¬PX÷88ErHiT9¬AE÷Indonesia¬WU÷indonesia¬AG÷2¬PY÷G0dqs0hU¬AF÷Singapore¬WV÷singapore¬AH÷0¬~"
+	html := `cjs.initialFeeds["fixtures"] = { data: ` + "``" + ` };` +
+		`cjs.initialFeeds["results"] = { data: ` + "`" + section + match + "`" + ` };`
+
+	matches, teams, err := parseFeeds(html)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || len(teams) != 2 {
+		t.Fatalf("matches = %d, teams = %d", len(matches), len(teams))
+	}
+	want := domain.Competition{Name: "ASEAN Championship", Path: "/football/asia/asean-championship/", Region: "Asia"}
+	if matches[0].Competition != want {
+		t.Errorf("competition = %+v", matches[0].Competition)
+	}
+	for _, tm := range teams {
+		if tm.Slug == "" {
+			t.Errorf("team %s has no slug", tm.Name)
 		}
 	}
 }

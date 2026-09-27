@@ -21,35 +21,19 @@ const baseURL = "https://www.flashscore.com"
 // The <title> is not reliable: the Super League page says "Super League Indonesia".
 var seasonPattern = regexp.MustCompile(`heading__info">(\d{4})(?:/\d{4})?<`)
 
+// League pages quote the feed names with ' and team pages with ".
 var feedPatterns = map[string]*regexp.Regexp{
-	"fixtures": regexp.MustCompile("cjs\\.initialFeeds\\['fixtures'\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
-	"results":  regexp.MustCompile("cjs\\.initialFeeds\\['results'\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
+	"fixtures": regexp.MustCompile("cjs\\.initialFeeds\\[['\"]fixtures['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
+	"results":  regexp.MustCompile("cjs\\.initialFeeds\\[['\"]results['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
 }
 
 // ScrapeLeague reads fixtures (scheduled and live) and results of one competition
 // page, e.g. path "/football/indonesia/super-league/", from one page load.
 func ScrapeLeague(path string) ([]domain.Match, []domain.Team, error) {
-	req, err := http.NewRequest("GET", baseURL+path, nil)
+	html, err := fetchPage(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("unexpected status %d", res.StatusCode)
-	}
-
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, nil, err
-	}
-	html := string(body)
 
 	found := seasonPattern.FindStringSubmatch(html)
 	if len(found) < 2 {
@@ -57,6 +41,55 @@ func ScrapeLeague(path string) ([]domain.Match, []domain.Team, error) {
 	}
 	season, _ := strconv.Atoi(found[1])
 
+	matches, teams, err := parseFeeds(html)
+	for i := range matches {
+		matches[i].Season = season
+	}
+	return matches, teams, err
+}
+
+// ScrapeTeam reads a team's recent results and fixtures across all its
+// competitions, e.g. path "/team/indonesia/88ErHiT9/results/". Each match
+// carries its competition; the season is the year it is played (WIB).
+// ponytail: a tournament spanning New Year (ASEAN Championship) splits over two seasons; read the season from the competition page if that matters.
+func ScrapeTeam(path string) ([]domain.Match, []domain.Team, error) {
+	html, err := fetchPage(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	matches, teams, err := parseFeeds(html)
+	for i := range matches {
+		matches[i].Season = matches[i].MatchTime.In(domain.WIB).Year()
+	}
+	return matches, teams, err
+}
+
+func fetchPage(path string) (string, error) {
+	req, err := http.NewRequest("GET", baseURL+path, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status %d", res.StatusCode)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// parseFeeds reads the fixtures and results feeds embedded in a page.
+func parseFeeds(html string) ([]domain.Match, []domain.Team, error) {
 	teamsMap := make(map[string]domain.Team)
 	var matches []domain.Match
 
@@ -66,19 +99,21 @@ func ScrapeLeague(path string) ([]domain.Match, []domain.Team, error) {
 			return nil, nil, fmt.Errorf("initialFeeds['%s'] not found", name)
 		}
 
-		phase := ""
+		phase, competition := "", domain.Competition{}
 		for _, m := range parseRecords(found[1]) {
-			// A "ZA" record opens a section, e.g. "INDONESIA: President Cup - Play Offs".
+			// A "ZA" record opens a section, e.g. "INDONESIA: President Cup - Play Offs",
+			// with the competition name (ZK), page (ZL), and region or country (ZY).
 			if header, ok := m["ZA"]; ok {
 				phase = sectionPhase(header)
+				competition = domain.Competition{Name: m["ZK"], Path: m["ZL"], Region: m["ZY"]}
 				continue
 			}
 			match, home, away, ok := parseMatch(m)
 			if !ok {
 				continue
 			}
-			match.Season = season
 			match.Phase = phase
+			match.Competition = competition
 			teamsMap[home.FlashscoreID] = home
 			teamsMap[away.FlashscoreID] = away
 			matches = append(matches, match)
@@ -103,12 +138,14 @@ func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bo
 		FlashscoreID: m["PX"],
 		Name:         m["AE"],
 		ShortName:    m["WM"],
+		Slug:         m["WU"],
 		LogoURL:      imageURL(m["OA"]),
 	}
 	away := domain.Team{
 		FlashscoreID: m["PY"],
 		Name:         m["AF"],
 		ShortName:    m["WN"],
+		Slug:         m["WV"],
 		LogoURL:      imageURL(m["OB"]),
 	}
 
