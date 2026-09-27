@@ -109,7 +109,6 @@ func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bo
 		AwayScore:            awayScore,
 		Stage:                stage,
 		StageStartedAt:       unix(m["AO"]),
-		UpdatedAt:            time.Now(),
 	}, home, away, true
 }
 

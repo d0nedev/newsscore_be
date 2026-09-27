@@ -15,7 +15,6 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/tracing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -37,8 +36,8 @@ type profile struct {
 	Team     db.GetTeamRow
 	Season   int16
 	Squad    []db.ListTeamSquadRow
-	Recent   []db.ListTeamRecentMatchesRow
-	Upcoming []db.ListTeamUpcomingMatchesRow
+	Recent   []db.MatchRow
+	Upcoming []db.MatchRow
 }
 
 func (s *Service) Profile(ctx context.Context, id uuid.UUID) (profile, error) {
@@ -48,7 +47,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (profile, error) {
 	fail := func(msg string, err error) (profile, error) {
 		return profile{}, tracing.Fail(span, apperror.Internal(CodeTeamQueryFailed, msg, err))
 	}
-	teamID := pgtype.UUID{Bytes: id, Valid: true}
+	teamID := database.UUID(id)
 
 	t, err := s.queries.GetTeam(ctx, teamID)
 	if err != nil {
@@ -137,10 +136,10 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 		})
 	}
 	for _, m := range p.Recent {
-		out.Recent = append(out.Recent, match.ToMatchResponse(db.ListMatchesRow(m)))
+		out.Recent = append(out.Recent, match.ToMatchResponse(m))
 	}
 	for _, m := range p.Upcoming {
-		out.Upcoming = append(out.Upcoming, match.ToMatchResponse(db.ListMatchesRow(m)))
+		out.Upcoming = append(out.Upcoming, match.ToMatchResponse(m))
 	}
 
 	return httpx.WriteJSON(w, http.StatusOK, struct {

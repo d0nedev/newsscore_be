@@ -12,49 +12,26 @@ import (
 )
 
 const getMatch = `-- name: GetMatch :one
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
-       h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
-       a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
-FROM matches m
-JOIN teams h ON h.id = m.home_team_id
-JOIN teams a ON a.id = m.away_team_id
-WHERE m.id = $1
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows WHERE id = $1
 `
 
-type GetMatchRow struct {
-	ID             pgtype.UUID
-	Status         string
-	MatchTime      pgtype.Timestamptz
-	HomeScore      pgtype.Int2
-	AwayScore      pgtype.Int2
-	Stage          pgtype.Int2
-	StageStartedAt pgtype.Timestamptz
-	HomeID         pgtype.UUID
-	HomeName       string
-	HomeShortName  string
-	HomeLogoUrl    pgtype.Text
-	AwayID         pgtype.UUID
-	AwayName       string
-	AwayShortName  string
-	AwayLogoUrl    pgtype.Text
-}
-
-func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (GetMatchRow, error) {
+func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (MatchRow, error) {
 	row := q.db.QueryRow(ctx, getMatch, id)
-	var i GetMatchRow
+	var i MatchRow
 	err := row.Scan(
 		&i.ID,
+		&i.Season,
 		&i.Status,
 		&i.MatchTime,
 		&i.HomeScore,
 		&i.AwayScore,
 		&i.Stage,
 		&i.StageStartedAt,
-		&i.HomeID,
+		&i.HomeTeamID,
+		&i.AwayTeamID,
 		&i.HomeName,
 		&i.HomeShortName,
 		&i.HomeLogoUrl,
-		&i.AwayID,
 		&i.AwayName,
 		&i.AwayShortName,
 		&i.AwayLogoUrl,
@@ -157,16 +134,11 @@ func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]
 }
 
 const listMatches = `-- name: ListMatches :many
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
-       h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
-       a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
-FROM matches m
-JOIN teams h ON h.id = m.home_team_id
-JOIN teams a ON a.id = m.away_team_id
-WHERE m.match_time >= $1 AND m.match_time < $2
-  AND ($3::uuid IS NULL OR $3::uuid IN (m.home_team_id, m.away_team_id))
-  AND ($4::text IS NULL OR m.status = $4::text)
-ORDER BY m.match_time, m.id
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows
+WHERE match_time >= $1 AND match_time < $2
+  AND ($3::uuid IS NULL OR $3::uuid IN (home_team_id, away_team_id))
+  AND ($4::text IS NULL OR status = $4::text)
+ORDER BY match_time, id
 `
 
 type ListMatchesParams struct {
@@ -176,25 +148,7 @@ type ListMatchesParams struct {
 	Status   pgtype.Text
 }
 
-type ListMatchesRow struct {
-	ID             pgtype.UUID
-	Status         string
-	MatchTime      pgtype.Timestamptz
-	HomeScore      pgtype.Int2
-	AwayScore      pgtype.Int2
-	Stage          pgtype.Int2
-	StageStartedAt pgtype.Timestamptz
-	HomeID         pgtype.UUID
-	HomeName       string
-	HomeShortName  string
-	HomeLogoUrl    pgtype.Text
-	AwayID         pgtype.UUID
-	AwayName       string
-	AwayShortName  string
-	AwayLogoUrl    pgtype.Text
-}
-
-func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]ListMatchesRow, error) {
+func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]MatchRow, error) {
 	rows, err := q.db.Query(ctx, listMatches,
 		arg.FromTime,
 		arg.ToTime,
@@ -205,22 +159,23 @@ func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]Lis
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListMatchesRow
+	var items []MatchRow
 	for rows.Next() {
-		var i ListMatchesRow
+		var i MatchRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Season,
 			&i.Status,
 			&i.MatchTime,
 			&i.HomeScore,
 			&i.AwayScore,
 			&i.Stage,
 			&i.StageStartedAt,
-			&i.HomeID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
 			&i.HomeName,
 			&i.HomeShortName,
 			&i.HomeLogoUrl,
-			&i.AwayID,
 			&i.AwayName,
 			&i.AwayShortName,
 			&i.AwayLogoUrl,

@@ -23,13 +23,13 @@ func NewService(queries *db.Queries, tracer trace.Tracer) *Service {
 }
 
 type matchDetail struct {
-	Match   db.ListMatchesRow
+	Match   db.MatchRow
 	Events  []db.ListMatchEventsRow
 	Lineups []db.ListMatchLineupsRow
 	Stats   []byte // JSONB array of {label, home, away}; nil when not scraped yet
 }
 
-func (s *Service) List(ctx context.Context, f listFilter) ([]db.ListMatchesRow, error) {
+func (s *Service) List(ctx context.Context, f listFilter) ([]db.MatchRow, error) {
 	ctx, span := s.tracer.Start(ctx, "MatchService.List")
 	defer span.End()
 
@@ -39,7 +39,7 @@ func (s *Service) List(ctx context.Context, f listFilter) ([]db.ListMatchesRow, 
 		Status:   pgtype.Text{String: f.Status, Valid: f.Status != ""},
 	}
 	if f.TeamID != nil {
-		params.TeamID = pgUUID(*f.TeamID)
+		params.TeamID = database.UUID(*f.TeamID)
 	}
 
 	matches, err := s.queries.ListMatches(ctx, params)
@@ -54,7 +54,7 @@ func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (matchDetail, erro
 	ctx, span := s.tracer.Start(ctx, "MatchService.FindByID")
 	defer span.End()
 
-	row, err := s.queries.GetMatch(ctx, pgUUID(id))
+	row, err := s.queries.GetMatch(ctx, database.UUID(id))
 	if err != nil {
 		if database.IsNotFound(err) {
 			return matchDetail{}, apperror.NotFound(CodeMatchNotFound, "match not found")
@@ -77,9 +77,5 @@ func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (matchDetail, erro
 		return matchDetail{}, tracing.Fail(span, apperror.Internal(CodeMatchQueryFailed, "failed to list lineups", err))
 	}
 
-	return matchDetail{Match: db.ListMatchesRow(row), Events: events, Lineups: lineups, Stats: stats}, nil
-}
-
-func pgUUID(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: id, Valid: true}
+	return matchDetail{Match: row, Events: events, Lineups: lineups, Stats: stats}, nil
 }

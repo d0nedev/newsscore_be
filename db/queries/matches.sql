@@ -1,23 +1,12 @@
 -- name: ListMatches :many
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
-       h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
-       a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
-FROM matches m
-JOIN teams h ON h.id = m.home_team_id
-JOIN teams a ON a.id = m.away_team_id
-WHERE m.match_time >= sqlc.arg(from_time) AND m.match_time < sqlc.arg(to_time)
-  AND (sqlc.narg(team_id)::uuid IS NULL OR sqlc.narg(team_id)::uuid IN (m.home_team_id, m.away_team_id))
-  AND (sqlc.narg(status)::text IS NULL OR m.status = sqlc.narg(status)::text)
-ORDER BY m.match_time, m.id;
+SELECT * FROM match_rows
+WHERE match_time >= sqlc.arg(from_time) AND match_time < sqlc.arg(to_time)
+  AND (sqlc.narg(team_id)::uuid IS NULL OR sqlc.narg(team_id)::uuid IN (home_team_id, away_team_id))
+  AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
+ORDER BY match_time, id;
 
 -- name: GetMatch :one
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
-       h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
-       a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
-FROM matches m
-JOIN teams h ON h.id = m.home_team_id
-JOIN teams a ON a.id = m.away_team_id
-WHERE m.id = $1;
+SELECT * FROM match_rows WHERE id = $1;
 
 -- name: ListMatchEvents :many
 SELECT type, minute, player_name, team_id, related_player_name

@@ -48,6 +48,25 @@ type MatchLineup struct {
 	Starter     bool
 }
 
+type MatchRow struct {
+	ID             pgtype.UUID
+	Season         int16
+	Status         string
+	MatchTime      pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
+	HomeTeamID     pgtype.UUID
+	AwayTeamID     pgtype.UUID
+	HomeName       string
+	HomeShortName  string
+	HomeLogoUrl    pgtype.Text
+	AwayName       string
+	AwayShortName  string
+	AwayLogoUrl    pgtype.Text
+}
+
 type MatchStatistic struct {
 	MatchID   pgtype.UUID
 	Stats     []byte

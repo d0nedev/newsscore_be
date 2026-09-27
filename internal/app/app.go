@@ -90,17 +90,12 @@ func New(ctx context.Context, version string) (*App, error) {
 		return nil, fmt.Errorf("initialize database: %w", err)
 	}
 
-	if len(cfg.Auth.APIKeys) == 0 {
-		logger.Warn("API_KEYS is empty: write endpoints are unauthenticated (development only)")
-	}
-
 	logger.Info("configuration loaded",
 		slog.String("version", version),
 		slog.Float64("trace_sample_rate", cfg.Tracing.SampleRate),
 		slog.Bool("otlp_insecure", cfg.OTLP.Insecure),
 		slog.Int("rate_limit_rpm", cfg.RateLimit.RequestsPerMinute),
 		slog.Any("trusted_proxies", cfg.App.TrustedProxies),
-		slog.Int("api_keys", len(cfg.Auth.APIKeys)),
 	)
 
 	healthHandler := health.NewHandler(pool)

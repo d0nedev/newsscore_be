@@ -65,7 +65,6 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
       OTEL_EXPORTER_OTLP_INSECURE: "true"
       OTEL_TRACE_SAMPLE_RATE: ${OTEL_TRACE_SAMPLE_RATE:-0.1}
-      API_KEYS: ${API_KEYS:?API_KEYS is required}
       RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-600}
       SESSION_TTL: ${SESSION_TTL:-720h}
       # Exact frontend origin(s), e.g. https://newsscore.id

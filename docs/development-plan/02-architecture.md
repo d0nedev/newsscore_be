@@ -45,7 +45,7 @@ pertandingan besar. Kalau digabung, lonjakan trafik menunda ingestion dan skor
 justru tertinggal tepat ketika paling banyak dilihat. Pemisahan juga membuat
 API bisa direstart tanpa memutus siklus ingestion.
 
-**Konsekuensi.** Perlu koordinasi antarproses lewat Redis, dan deployment
+**Konsekuensi.** Perlu koordinasi antarproses lewat PostgreSQL `LISTEN/NOTIFY`, dan deployment
 mengelola dua unit. Keduanya dapat diterima.
 
 ### 2.2 PostgreSQL sebagai sumber kebenaran, bukan cache belaka
@@ -118,7 +118,7 @@ Ingestor ──20 detik──► Flashscore
     │
     ├─► deteksi perubahan ─► simpan ke PostgreSQL
     │
-    └─► publish ke Redis ─► SSE hub ─► seluruh klien terhubung
+    └─► trigger pg_notify ─► API (LISTEN) ─► SSE hub ─► seluruh klien terhubung
 ```
 
 Klien menerima muatan awal lewat REST, lalu hanya menerima selisihnya lewat SSE.

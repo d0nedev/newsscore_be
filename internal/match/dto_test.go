@@ -33,7 +33,7 @@ func TestParseListFilter(t *testing.T) {
 
 func TestToMatchResponse(t *testing.T) {
 	kickoff := time.Date(2026, 9, 14, 12, 30, 0, 0, time.UTC)
-	row := db.ListMatchesRow{
+	row := db.MatchRow{
 		Status:    "scheduled",
 		MatchTime: pgtype.Timestamptz{Time: kickoff, Valid: true},
 		HomeScore: pgtype.Int2{Valid: true},

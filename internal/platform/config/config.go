@@ -69,7 +69,6 @@ type TracingConfig struct {
 }
 
 type AuthConfig struct {
-	APIKeys        []string
 	SessionTTL     time.Duration
 	CookieSecure   bool
 	AllowedOrigins []string // CORS origins allowed to send the session cookie
@@ -166,7 +165,6 @@ func Load() (*Config, error) {
 			Insecure: v.GetBool("OTEL_EXPORTER_OTLP_INSECURE"),
 		},
 		Auth: AuthConfig{
-			APIKeys:        splitList(v.GetString("API_KEYS")),
 			SessionTTL:     v.GetDuration("SESSION_TTL"),
 			CookieSecure:   env != EnvDevelopment, // plain http://localhost needs non-Secure cookies
 			AllowedOrigins: splitList(v.GetString("CORS_ALLOWED_ORIGINS")),
@@ -240,10 +238,6 @@ func (c *Config) Validate() error {
 	}
 	require(c.Ingest.LiveInterval >= 10*time.Second, "INGEST_LIVE_INTERVAL must be at least 10s")
 	require(c.Ingest.DetailsPerRun >= 0, "INGEST_DETAILS_PER_RUN must not be negative")
-
-	if c.App.Env != EnvDevelopment {
-		require(len(c.Auth.APIKeys) > 0, "API_KEYS is required outside development")
-	}
 
 	if c.App.Env == EnvProduction {
 		require(slices.Contains([]string{"require", "verify-ca", "verify-full"}, c.DB.SSLMode),

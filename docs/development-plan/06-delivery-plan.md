@@ -63,7 +63,7 @@ sebuah pertandingan, dan muncul di respons endpoint berita terkait pertandingan 
 
 ### Fase 4 — Pembaruan langsung (1 pekan)
 
-- SSE hub dan publikasi lewat Redis
+- SSE hub dan publikasi lewat PostgreSQL `LISTEN/NOTIFY` (trigger di `matches` dan `match_events`)
 - Dukungan `Last-Event-ID` untuk penyambungan ulang klien
 - Uji beban pada koneksi SSE
 

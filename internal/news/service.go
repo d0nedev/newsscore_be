@@ -27,11 +27,12 @@ func NewService(pool *pgxpool.Pool, queries *db.Queries, tracer trace.Tracer) *S
 	return &Service{pool: pool, queries: queries, tracer: tracer}
 }
 
-func pgUUID(id *uuid.UUID) pgtype.UUID {
+// optUUID maps an optional filter to a nullable query argument.
+func optUUID(id *uuid.UUID) pgtype.UUID {
 	if id == nil {
 		return pgtype.UUID{}
 	}
-	return pgtype.UUID{Bytes: *id, Valid: true}
+	return database.UUID(*id)
 }
 
 func (s *Service) List(ctx context.Context, f listFilter) ([]db.ListPublishedNewsRow, *cursor, error) {
@@ -39,14 +40,14 @@ func (s *Service) List(ctx context.Context, f listFilter) ([]db.ListPublishedNew
 	defer span.End()
 
 	params := db.ListPublishedNewsParams{
-		MatchID:  pgUUID(f.MatchID),
-		TeamID:   pgUUID(f.TeamID),
-		PlayerID: pgUUID(f.PlayerID),
+		MatchID:  optUUID(f.MatchID),
+		TeamID:   optUUID(f.TeamID),
+		PlayerID: optUUID(f.PlayerID),
 		RowLimit: int32(f.Limit + 1),
 	}
 	if f.After != nil {
 		params.CursorPublishedAt = pgtype.Timestamptz{Time: f.After.PublishedAt, Valid: true}
-		params.CursorID = pgUUID(&f.After.ID)
+		params.CursorID = database.UUID(f.After.ID)
 	}
 
 	rows, err := s.queries.ListPublishedNews(ctx, params)
@@ -88,7 +89,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (AdminNews, error) {
 	ctx, span := s.tracer.Start(ctx, "NewsService.Get")
 	defer span.End()
 
-	row, err := s.queries.GetNews(ctx, pgUUID(&id))
+	row, err := s.queries.GetNews(ctx, database.UUID(id))
 	if err != nil {
 		return AdminNews{}, mapError(span, err, CodeNewsQueryFailed, "failed to get news")
 	}
@@ -154,7 +155,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, v validated) error {
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
 		updated, err := q.UpdateNews(ctx, db.UpdateNewsParams{
-			ID: pgUUID(&id), Slug: v.Slug, Category: v.Category, Title: v.Title, Summary: v.Summary, Body: v.Body,
+			ID: database.UUID(id), Slug: v.Slug, Category: v.Category, Title: v.Title, Summary: v.Summary, Body: v.Body,
 			ImageUrl: pgtype.Text{String: v.Image, Valid: v.Image != ""},
 			Publish:  v.Published,
 		})
@@ -176,7 +177,7 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	ctx, span := s.tracer.Start(ctx, "NewsService.Delete")
 	defer span.End()
 
-	n, err := s.queries.DeleteNews(ctx, pgUUID(&id))
+	n, err := s.queries.DeleteNews(ctx, database.UUID(id))
 	if err != nil {
 		return tracing.Fail(span, apperror.Internal(CodeNewsWriteFailed, "failed to delete news", err))
 	}

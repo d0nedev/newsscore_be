@@ -1,4 +1,5 @@
 # Skema Database PostgreSQL - NewsScore
+> Skema yang berlaku ada di `db/migrations/`. Dokumen ini rencana awal; bila berbeda, migrasi yang benar.
 
 Hasil scan `app/types/match.ts`, `app/data/*`, `app/pages/*`, `app/components/*`, dan kontrak di `docs/api-contract-plan.md`.
 Target: PostgreSQL 16. DDL di bagian 4 sudah dites jalan di PG 16 (tabel kosong).
@@ -17,7 +18,7 @@ Target: PostgreSQL 16. DDL di bagian 4 sudah dites jalan di PG 16 (tabel kosong)
 | Nama tim/pemain disimpan juga sebagai teks di tabel event/lineup/transfer | Data mock punya pemain/klub tanpa `playerId` (`playerId?`), mis. klub luar liga ("Boreham Wood"). FK nullable + nama teks fallback. |
 | Statistik pertandingan generik (`stat_key`) | `MatchStat` = daftar label bebas; tidak perlu kolom per statistik. |
 | Head-to-head, match log pemain, `liveCount`, `matchDates` **tidak disimpan** | Semua bisa diturunkan dari `matches` + `match_lineups` + `player_match_stats`. |
-| Klasemen **disimpan** (`standings`) | Dibaca sangat sering (beranda, sidebar, halaman liga); ditulis ulang oleh job ingest setiap pertandingan selesai. |
+| Klasemen **dihitung saat dibaca** (`db/queries/standings.sql`) | Dari pertandingan selesai; selalu konsisten dengan hasil, murah untuk 18 tim. Cache nanti bila perlu. |
 | Pin hanya liga | UI hanya punya pin liga (`usePinnedLeagues`). Tambah tabel pin tim/negara saat UI-nya ada. |
 | Sesi di tabel `sessions` | Auth pakai cookie HttpOnly (bukan JWT di JS) → cookie berisi token acak, DB simpan hash-nya. |
 

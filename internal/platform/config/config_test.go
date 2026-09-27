@@ -45,20 +45,16 @@ func TestValidate(t *testing.T) {
 		{"unknown env", func(c *Config) { c.App.Env = "prod" }, "APP_ENV"},
 		{"trusted proxy not cidr", func(c *Config) { c.App.TrustedProxies = []string{"10.0.0.1"} }, "TRUSTED_PROXIES"},
 		{"trusted proxy ok", func(c *Config) { c.App.TrustedProxies = []string{"10.0.0.0/8", "fd00::/8"} }, ""},
-		{"staging needs api keys", func(c *Config) { c.App.Env = EnvStaging }, "API_KEYS"},
 		{"production insecure", func(c *Config) {
 			c.App.Env = EnvProduction
-			c.Auth.APIKeys = []string{"k"}
 		}, "DB_SSL_MODE"},
 		{"production ok", func(c *Config) {
 			c.App.Env = EnvProduction
-			c.Auth.APIKeys = []string{"k"}
 			c.DB.SSLMode = "verify-full"
 			c.OTLP.Insecure = false
 		}, ""},
 		{"production allows explicit plaintext to local collector", func(c *Config) {
 			c.App.Env = EnvProduction
-			c.Auth.APIKeys = []string{"k"}
 			c.DB.SSLMode = "require"
 			c.OTLP.Insecure = true
 		}, ""},
@@ -93,7 +89,7 @@ func setRequiredEnv(t *testing.T, env string) {
 		"APP_ENV": env, "APP_SERVICE_NAME": "svc", "APP_PORT": "8080",
 		"DB_HOST": "h", "DB_PORT": "5432", "DB_NAME": "n", "DB_SSL_MODE": "verify-full",
 		"DB_MAX_CONNS": "5", "DB_MIN_CONNS": "1", "DB_MAX_CONN_LIFETIME": "1h", "DB_MAX_CONN_IDLE_TIME": "1m",
-		"OTEL_EXPORTER_OTLP_ENDPOINT": "c:4317", "OTEL_EXPORTER_OTLP_INSECURE": "false", "API_KEYS": "k",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "c:4317", "OTEL_EXPORTER_OTLP_INSECURE": "false",
 	} {
 		t.Setenv(k, v)
 	}

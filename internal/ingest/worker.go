@@ -51,7 +51,7 @@ func (w *Worker) syncLeague(ctx context.Context) error {
 			FlashscoreID: t.FlashscoreID,
 			Name:         t.Name,
 			ShortName:    t.ShortName,
-			LogoUrl:      pgtype.Text{String: t.LogoURL, Valid: t.LogoURL != ""},
+			LogoUrl:      optText(t.LogoURL),
 		})
 		if err != nil {
 			w.logger.Error("upsert team failed", slog.String("team", t.Name), slog.Any("error", err))
@@ -123,13 +123,6 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDe
 		return err
 	}
 
-	teamBySide := func(side int) pgtype.UUID {
-		if side == 2 {
-			return m.AwayTeamID
-		}
-		return m.HomeTeamID
-	}
-
 	if err := w.saveEvents(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, events); err != nil {
 		return err
 	}
@@ -137,13 +130,13 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDe
 	for _, p := range players {
 		number := pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0}
 		position := pgtype.Text{String: "GK", Valid: p.Goalkeeper}
-		team := teamBySide(p.Team)
+		team := sideTeam(p.Team, m.HomeTeamID, m.AwayTeamID)
 
 		playerID, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
 			FlashscoreID: p.FlashscoreID,
 			TeamID:       team,
 			Name:         p.Name,
-			Nationality:  pgtype.Text{String: p.Nationality, Valid: p.Nationality != ""},
+			Nationality:  optText(p.Nationality),
 			ShirtNumber:  number,
 			Position:     position,
 		})
@@ -218,10 +211,7 @@ func (w *Worker) syncLiveMatch(ctx context.Context, m db.ListLiveCandidatesRow) 
 
 func (w *Worker) saveEvents(ctx context.Context, matchID, homeID, awayID pgtype.UUID, events []flashscore.MatchEvent) error {
 	for _, e := range events {
-		team := homeID
-		if e.Team == 2 {
-			team = awayID
-		}
+		team := sideTeam(e.Team, homeID, awayID)
 		if err := w.db.UpsertMatchEvent(ctx, db.UpsertMatchEventParams{
 			MatchID:             matchID,
 			FlashscoreID:        e.ID,
@@ -237,6 +227,14 @@ func (w *Worker) saveEvents(ctx context.Context, matchID, homeID, awayID pgtype.
 		}
 	}
 	return nil
+}
+
+// sideTeam maps Flashscore's side (1 home, 2 away) to the team id.
+func sideTeam(side int, homeID, awayID pgtype.UUID) pgtype.UUID {
+	if side == 2 {
+		return awayID
+	}
+	return homeID
 }
 
 func optText(s string) pgtype.Text {

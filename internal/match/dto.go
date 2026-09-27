@@ -8,17 +8,12 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/d0nedev/newsscore/internal/domain"
 	"github.com/d0nedev/newsscore/internal/platform/apperror"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
-
-// dateLayout is the contract's "DD.MM.YYYY" (see docs/development-plan/api-contract-plan.md).
-const dateLayout = "02.01.2006"
-
-// wib is the product's home time zone: a "date" means a calendar day in Indonesia.
-var wib = time.FixedZone("WIB", 7*60*60)
 
 var validStatuses = map[string]bool{"scheduled": true, "live": true, "finished": true}
 
@@ -33,10 +28,10 @@ func parseListFilter(q url.Values) (listFilter, error) {
 
 	date := q.Get("date")
 	if date == "" {
-		now := time.Now().In(wib)
-		f.From = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, wib)
+		now := time.Now().In(domain.WIB)
+		f.From = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, domain.WIB)
 	} else {
-		from, err := time.ParseInLocation(dateLayout, date, wib)
+		from, err := time.ParseInLocation(domain.DateLayout, date, domain.WIB)
 		if err != nil {
 			return f, apperror.Validation("date must be DD.MM.YYYY")
 		}
@@ -114,17 +109,17 @@ type DataResponse struct {
 	Data any `json:"data"`
 }
 
-// ToMatchResponse renders a match row; other packages convert their identical row types to db.ListMatchesRow.
-func ToMatchResponse(m db.ListMatchesRow) MatchResponse {
-	kickoff := m.MatchTime.Time.In(wib)
+// ToMatchResponse renders a match with both teams (the match_rows view).
+func ToMatchResponse(m db.MatchRow) MatchResponse {
+	kickoff := m.MatchTime.Time.In(domain.WIB)
 
 	resp := MatchResponse{
 		ID:     m.ID.String(),
 		Status: m.Status,
 		Time:   kickoff.Format("15:04"),
-		Date:   kickoff.Format(dateLayout),
-		Home:   TeamResponse{ID: m.HomeID.String(), Name: m.HomeName, Badge: m.HomeShortName, Logo: m.HomeLogoUrl.String},
-		Away:   TeamResponse{ID: m.AwayID.String(), Name: m.AwayName, Badge: m.AwayShortName, Logo: m.AwayLogoUrl.String},
+		Date:   kickoff.Format(domain.DateLayout),
+		Home:   TeamResponse{ID: m.HomeTeamID.String(), Name: m.HomeName, Badge: m.HomeShortName, Logo: m.HomeLogoUrl.String},
+		Away:   TeamResponse{ID: m.AwayTeamID.String(), Name: m.AwayName, Badge: m.AwayShortName, Logo: m.AwayLogoUrl.String},
 	}
 	if m.Status == "live" {
 		resp.Time = liveMinute(m.Stage, m.StageStartedAt, time.Now())
@@ -178,7 +173,7 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 	}
 	for _, l := range d.Lineups {
 		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter}
-		if l.TeamID == d.Match.HomeID {
+		if l.TeamID == d.Match.HomeTeamID {
 			resp.Lineups.Home = append(resp.Lineups.Home, p)
 		} else {
 			resp.Lineups.Away = append(resp.Lineups.Away, p)
@@ -195,7 +190,7 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 		}
 		ev := EventResponse{
 			Minute: e.Minute,
-			Team:   side(e.TeamID, d.Match.HomeID),
+			Team:   side(e.TeamID, d.Match.HomeTeamID),
 			Type:   kind,
 			Player: e.PlayerName,
 		}

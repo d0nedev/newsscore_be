@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 	"uuid"
 
+	"github.com/d0nedev/newsscore/internal/domain"
 	"github.com/d0nedev/newsscore/internal/platform/apperror"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 
@@ -132,8 +133,6 @@ func toNewsItem(slug, category, title, summary string, image pgtype.Text, publis
 	}
 }
 
-var wib = time.FixedZone("WIB", 7*60*60)
-
 // relativeLabel renders "baru saja", "5 menit lalu", "2 jam lalu", "3 hari lalu", then a date.
 func relativeLabel(t, now time.Time) string {
 	d := now.Sub(t)
@@ -147,7 +146,7 @@ func relativeLabel(t, now time.Time) string {
 	case d < 7*24*time.Hour:
 		return fmt.Sprintf("%d hari lalu", int(d.Hours()/24))
 	}
-	return t.In(wib).Format("02.01.2006")
+	return t.In(domain.WIB).Format(domain.DateLayout)
 }
 
 // ---- admin ----

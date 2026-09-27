@@ -35,57 +35,35 @@ func (q *Queries) GetTeam(ctx context.Context, id pgtype.UUID) (GetTeamRow, erro
 }
 
 const listTeamRecentMatches = `-- name: ListTeamRecentMatches :many
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
-       h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
-       a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
-FROM matches m
-JOIN teams h ON h.id = m.home_team_id
-JOIN teams a ON a.id = m.away_team_id
-WHERE $1 IN (m.home_team_id, m.away_team_id) AND m.status <> 'scheduled'
-ORDER BY m.match_time DESC
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows
+WHERE $1::uuid IN (home_team_id, away_team_id) AND status <> 'scheduled'
+ORDER BY match_time DESC
 LIMIT 5
 `
 
-type ListTeamRecentMatchesRow struct {
-	ID             pgtype.UUID
-	Status         string
-	MatchTime      pgtype.Timestamptz
-	HomeScore      pgtype.Int2
-	AwayScore      pgtype.Int2
-	Stage          pgtype.Int2
-	StageStartedAt pgtype.Timestamptz
-	HomeID         pgtype.UUID
-	HomeName       string
-	HomeShortName  string
-	HomeLogoUrl    pgtype.Text
-	AwayID         pgtype.UUID
-	AwayName       string
-	AwayShortName  string
-	AwayLogoUrl    pgtype.Text
-}
-
-func (q *Queries) ListTeamRecentMatches(ctx context.Context, homeTeamID pgtype.UUID) ([]ListTeamRecentMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listTeamRecentMatches, homeTeamID)
+func (q *Queries) ListTeamRecentMatches(ctx context.Context, teamID pgtype.UUID) ([]MatchRow, error) {
+	rows, err := q.db.Query(ctx, listTeamRecentMatches, teamID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTeamRecentMatchesRow
+	var items []MatchRow
 	for rows.Next() {
-		var i ListTeamRecentMatchesRow
+		var i MatchRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Season,
 			&i.Status,
 			&i.MatchTime,
 			&i.HomeScore,
 			&i.AwayScore,
 			&i.Stage,
 			&i.StageStartedAt,
-			&i.HomeID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
 			&i.HomeName,
 			&i.HomeShortName,
 			&i.HomeLogoUrl,
-			&i.AwayID,
 			&i.AwayName,
 			&i.AwayShortName,
 			&i.AwayLogoUrl,
@@ -165,57 +143,35 @@ func (q *Queries) ListTeamSquad(ctx context.Context, arg ListTeamSquadParams) ([
 }
 
 const listTeamUpcomingMatches = `-- name: ListTeamUpcomingMatches :many
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
-       h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
-       a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
-FROM matches m
-JOIN teams h ON h.id = m.home_team_id
-JOIN teams a ON a.id = m.away_team_id
-WHERE $1 IN (m.home_team_id, m.away_team_id) AND m.status = 'scheduled'
-ORDER BY m.match_time
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url FROM match_rows
+WHERE $1::uuid IN (home_team_id, away_team_id) AND status = 'scheduled'
+ORDER BY match_time
 LIMIT 5
 `
 
-type ListTeamUpcomingMatchesRow struct {
-	ID             pgtype.UUID
-	Status         string
-	MatchTime      pgtype.Timestamptz
-	HomeScore      pgtype.Int2
-	AwayScore      pgtype.Int2
-	Stage          pgtype.Int2
-	StageStartedAt pgtype.Timestamptz
-	HomeID         pgtype.UUID
-	HomeName       string
-	HomeShortName  string
-	HomeLogoUrl    pgtype.Text
-	AwayID         pgtype.UUID
-	AwayName       string
-	AwayShortName  string
-	AwayLogoUrl    pgtype.Text
-}
-
-func (q *Queries) ListTeamUpcomingMatches(ctx context.Context, homeTeamID pgtype.UUID) ([]ListTeamUpcomingMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listTeamUpcomingMatches, homeTeamID)
+func (q *Queries) ListTeamUpcomingMatches(ctx context.Context, teamID pgtype.UUID) ([]MatchRow, error) {
+	rows, err := q.db.Query(ctx, listTeamUpcomingMatches, teamID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListTeamUpcomingMatchesRow
+	var items []MatchRow
 	for rows.Next() {
-		var i ListTeamUpcomingMatchesRow
+		var i MatchRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Season,
 			&i.Status,
 			&i.MatchTime,
 			&i.HomeScore,
 			&i.AwayScore,
 			&i.Stage,
 			&i.StageStartedAt,
-			&i.HomeID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
 			&i.HomeName,
 			&i.HomeShortName,
 			&i.HomeLogoUrl,
-			&i.AwayID,
 			&i.AwayName,
 			&i.AwayShortName,
 			&i.AwayLogoUrl,

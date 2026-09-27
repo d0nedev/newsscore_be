@@ -40,7 +40,8 @@ Tiga sasaran yang menentukan hampir semua keputusan teknis di dokumen ini:
 |---|---|
 | Backend | Go 1.23, chi, pgx, sqlc |
 | Basis data | PostgreSQL 16 |
-| Cache & pub/sub | Redis 7 |
+| Cache | Redis 7 (belum diimplementasikan) |
+| Pub/sub live | PostgreSQL `LISTEN/NOTIFY` |
 | Sumber data | Flashscore (scraping), SofaScore sebagai cadangan |
 | Realtime | Server-Sent Events |
 | Deployment | Docker Compose di VPS, Caddy sebagai reverse proxy |

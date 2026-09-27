@@ -19,7 +19,6 @@ func testRouter(t *testing.T, logs *bytes.Buffer) (http.Handler, *health.Handler
 	t.Helper()
 
 	cfg := &config.Config{
-		Auth:      config.AuthConfig{APIKeys: []string{"secret"}},
 		RateLimit: config.RateLimitConfig{RequestsPerMinute: 3},
 	}
 	logger := slog.New(slog.NewJSONHandler(logs, nil))

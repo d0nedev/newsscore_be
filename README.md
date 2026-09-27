@@ -10,7 +10,7 @@ Kebutuhan: Go 1.27+ (memakai package `uuid` dari stdlib), Docker, [sqlc](https:/
 cmd/server            entrypoint: HTTP server, graceful shutdown + readiness drain
 internal/app          composition root: config, telemetry, DB pool, router (app.go); wiring domain (modules.go)
 internal/ingest       ingestor: scrape Flashscore -> upsert PostgreSQL
-internal/provider     anti-corruption layer penyedia data (flashscore, sofascore)
+internal/provider     anti-corruption layer penyedia data (flashscore)
 internal/platform     utilitas sistem (bukan business logic):
   config              konfigurasi dari env / .env, validasi per environment
   database            pool Postgres + kode hasil generate sqlc
@@ -53,8 +53,6 @@ make up          # postgres, migrate, app, otel-collector, jaeger, prometheus
 - Grafana: http://localhost:3000 (dashboard `newsscore`, datasource Prometheus + Jaeger, tanpa login — dev only)
 - Postgres: `localhost:55432` (postgres/postgres)
 
-Set `API_KEYS=...` di shell sebelum `make up` untuk mengaktifkan auth di compose.
-
 ### App lokal
 
 ```bash
@@ -71,7 +69,6 @@ Lihat [`.env.example`](.env.example). Aturan validasi penting:
 | Env | Aturan |
 |---|---|
 | `APP_ENV` | `development`, `staging`, atau `production` |
-| `API_KEYS` | Wajib di luar `development`. Dipisah koma untuk rotasi key. |
 | `DB_SSL_MODE` | Default `require`; di `production` wajib `require`/`verify-ca`/`verify-full` |
 | `OTEL_EXPORTER_OTLP_INSECURE` | Default `true` hanya di `development`, `false` di luar itu. Set `true` hanya untuk collector di network privat yang sama (lihat `deploy/`) |
 | `OTEL_TRACE_SAMPLE_RATE` | 0–1, default `0.1` |

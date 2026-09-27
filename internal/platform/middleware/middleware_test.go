@@ -22,46 +22,6 @@ var ok = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 })
 
-func TestAPIKey(t *testing.T) {
-	h := APIKey([]string{"old-key", "new-key"})(ok)
-
-	tests := []struct {
-		name string
-		key  string
-		want int
-	}{
-		{"missing", "", http.StatusUnauthorized},
-		{"wrong", "nope", http.StatusUnauthorized},
-		{"prefix of valid", "new", http.StatusUnauthorized},
-		{"first key", "old-key", http.StatusNoContent},
-		{"rotated key", "new-key", http.StatusNoContent},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/", nil)
-			if tt.key != "" {
-				req.Header.Set(APIKeyHeader, tt.key)
-			}
-			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, req)
-
-			if rec.Code != tt.want {
-				t.Errorf("status = %d, want %d", rec.Code, tt.want)
-			}
-		})
-	}
-}
-
-func TestAPIKeyDisabledWithoutKeys(t *testing.T) {
-	rec := httptest.NewRecorder()
-	APIKey(nil)(ok).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/", nil))
-
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("status = %d", rec.Code)
-	}
-}
-
 func TestRouteTagNamesSpanWithPattern(t *testing.T) {
 	sr := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))

@@ -476,11 +476,6 @@ components:
       type: apiKey
       in: cookie
       name: session
-    apiKey:
-      type: apiKey
-      in: header
-      name: X-API-Key
-      description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
     TeamProfile:

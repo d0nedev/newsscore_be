@@ -5,9 +5,9 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"time"
 	"uuid"
 
+	"github.com/d0nedev/newsscore/internal/domain"
 	"github.com/d0nedev/newsscore/internal/platform/apperror"
 	"github.com/d0nedev/newsscore/internal/platform/database"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
@@ -15,7 +15,6 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/tracing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -23,8 +22,6 @@ const (
 	CodePlayerNotFound    = "PLAYER_NOT_FOUND"
 	CodePlayerQueryFailed = "PLAYER_QUERY_FAILED"
 )
-
-var wib = time.FixedZone("WIB", 7*60*60)
 
 type Service struct {
 	queries *db.Queries
@@ -43,7 +40,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (db.GetPlayerRow, i
 		return tracing.Fail(span, apperror.Internal(CodePlayerQueryFailed, msg, err))
 	}
 
-	p, err := s.queries.GetPlayer(ctx, pgtype.UUID{Bytes: id, Valid: true})
+	p, err := s.queries.GetPlayer(ctx, database.UUID(id))
 	if err != nil {
 		if database.IsNotFound(err) {
 			return p, 0, nil, apperror.NotFound(CodePlayerNotFound, "player not found")
@@ -141,7 +138,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 
 	for _, m := range log {
 		e := MatchLogEntry{
-			Date: m.MatchTime.Time.In(wib).Format("02.01.2006"), MatchID: m.ID.String(),
+			Date: m.MatchTime.Time.In(domain.WIB).Format(domain.DateLayout), MatchID: m.ID.String(),
 			Home: m.HomeName, Away: m.AwayName,
 			Started: m.Starter, Played: m.Starter || m.SubbedOn,
 			Goals: m.Goals, Assists: m.Assists, Yellow: m.Yellow, Red: m.Red,
