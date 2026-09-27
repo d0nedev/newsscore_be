@@ -9,10 +9,12 @@ SET name = EXCLUDED.name,
 RETURNING id;
 
 -- name: UpsertMatch :one
-INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, data_as_of, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET status = EXCLUDED.status,
+    stage = EXCLUDED.stage,
+    stage_started_at = EXCLUDED.stage_started_at,
     match_time = EXCLUDED.match_time,
     home_score = EXCLUDED.home_score,
     away_score = EXCLUDED.away_score,
@@ -29,3 +31,16 @@ SET rank = EXCLUDED.rank,
     form = EXCLUDED.form,
     zone = EXCLUDED.zone,
     updated_at = now();
+
+-- name: ListLiveCandidates :many
+-- Live matches, plus scheduled ones whose kick-off has passed but the league page has not caught up.
+SELECT id, flashscore_id, home_team_id, away_team_id
+FROM matches
+WHERE status = 'live'
+   OR (status = 'scheduled' AND match_time <= now() AND match_time > now() - interval '3 hours');
+
+-- name: UpdateMatchLive :exec
+UPDATE matches
+SET status = $2, stage = $3, stage_started_at = $4, home_score = $5, away_score = $6,
+    data_as_of = now(), updated_at = now()
+WHERE id = $1;

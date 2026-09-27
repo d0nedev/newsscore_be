@@ -69,12 +69,17 @@ type TracingConfig struct {
 }
 
 type AuthConfig struct {
-	APIKeys []string
+	APIKeys        []string
+	SessionTTL     time.Duration
+	CookieSecure   bool
+	AllowedOrigins []string // CORS origins allowed to send the session cookie
 }
 
 type IngestConfig struct {
 	Interval      time.Duration
+	LiveInterval  time.Duration
 	DetailsPerRun int
+	FSign         string
 }
 
 type RateLimitConfig struct {
@@ -109,8 +114,10 @@ func Load() (*Config, error) {
 	v.SetDefault("DB_SSL_MODE", "require")
 	v.SetDefault("OTEL_TRACE_SAMPLE_RATE", 0.1)
 	v.SetDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 600)
+	v.SetDefault("SESSION_TTL", "720h")
 	v.SetDefault("INGEST_INTERVAL", "5m")
 	v.SetDefault("INGEST_DETAILS_PER_RUN", 20)
+	v.SetDefault("INGEST_LIVE_INTERVAL", "20s")
 
 	env := v.GetString("APP_ENV")
 
@@ -159,14 +166,19 @@ func Load() (*Config, error) {
 			Insecure: v.GetBool("OTEL_EXPORTER_OTLP_INSECURE"),
 		},
 		Auth: AuthConfig{
-			APIKeys: splitList(v.GetString("API_KEYS")),
+			APIKeys:        splitList(v.GetString("API_KEYS")),
+			SessionTTL:     v.GetDuration("SESSION_TTL"),
+			CookieSecure:   env != EnvDevelopment, // plain http://localhost needs non-Secure cookies
+			AllowedOrigins: splitList(v.GetString("CORS_ALLOWED_ORIGINS")),
 		},
 		RateLimit: RateLimitConfig{
 			RequestsPerMinute: v.GetInt("RATE_LIMIT_REQUESTS_PER_MINUTE"),
 		},
 		Ingest: IngestConfig{
 			Interval:      v.GetDuration("INGEST_INTERVAL"),
+			LiveInterval:  v.GetDuration("INGEST_LIVE_INTERVAL"),
 			DetailsPerRun: v.GetInt("INGEST_DETAILS_PER_RUN"),
+			FSign:         v.GetString("FLASHSCORE_FSIGN"),
 		},
 	}
 
@@ -221,6 +233,12 @@ func (c *Config) Validate() error {
 
 	require(c.RateLimit.RequestsPerMinute > 0, "RATE_LIMIT_REQUESTS_PER_MINUTE must be greater than 0")
 	require(c.Ingest.Interval >= time.Minute, "INGEST_INTERVAL must be at least 1m")
+	require(c.Auth.SessionTTL >= time.Hour, "SESSION_TTL must be at least 1h")
+	for _, o := range c.Auth.AllowedOrigins {
+		require(o != "*" && (strings.HasPrefix(o, "https://") || strings.HasPrefix(o, "http://")),
+			"CORS_ALLOWED_ORIGINS must list exact origins like https://app.example.com, not *")
+	}
+	require(c.Ingest.LiveInterval >= 10*time.Second, "INGEST_LIVE_INTERVAL must be at least 10s")
 	require(c.Ingest.DetailsPerRun >= 0, "INGEST_DETAILS_PER_RUN must not be negative")
 
 	if c.App.Env != EnvDevelopment {

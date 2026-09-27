@@ -11,11 +11,81 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listLiveCandidates = `-- name: ListLiveCandidates :many
+SELECT id, flashscore_id, home_team_id, away_team_id
+FROM matches
+WHERE status = 'live'
+   OR (status = 'scheduled' AND match_time <= now() AND match_time > now() - interval '3 hours')
+`
+
+type ListLiveCandidatesRow struct {
+	ID           pgtype.UUID
+	FlashscoreID string
+	HomeTeamID   pgtype.UUID
+	AwayTeamID   pgtype.UUID
+}
+
+// Live matches, plus scheduled ones whose kick-off has passed but the league page has not caught up.
+func (q *Queries) ListLiveCandidates(ctx context.Context) ([]ListLiveCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listLiveCandidates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveCandidatesRow
+	for rows.Next() {
+		var i ListLiveCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FlashscoreID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateMatchLive = `-- name: UpdateMatchLive :exec
+UPDATE matches
+SET status = $2, stage = $3, stage_started_at = $4, home_score = $5, away_score = $6,
+    data_as_of = now(), updated_at = now()
+WHERE id = $1
+`
+
+type UpdateMatchLiveParams struct {
+	ID             pgtype.UUID
+	Status         string
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+}
+
+func (q *Queries) UpdateMatchLive(ctx context.Context, arg UpdateMatchLiveParams) error {
+	_, err := q.db.Exec(ctx, updateMatchLive,
+		arg.ID,
+		arg.Status,
+		arg.Stage,
+		arg.StageStartedAt,
+		arg.HomeScore,
+		arg.AwayScore,
+	)
+	return err
+}
+
 const upsertMatch = `-- name: UpsertMatch :one
-INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, data_as_of, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
+INSERT INTO matches (flashscore_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET status = EXCLUDED.status,
+    stage = EXCLUDED.stage,
+    stage_started_at = EXCLUDED.stage_started_at,
     match_time = EXCLUDED.match_time,
     home_score = EXCLUDED.home_score,
     away_score = EXCLUDED.away_score,
@@ -25,14 +95,16 @@ RETURNING id
 `
 
 type UpsertMatchParams struct {
-	FlashscoreID string
-	Season       int16
-	HomeTeamID   pgtype.UUID
-	AwayTeamID   pgtype.UUID
-	Status       string
-	MatchTime    pgtype.Timestamptz
-	HomeScore    pgtype.Int2
-	AwayScore    pgtype.Int2
+	FlashscoreID   string
+	Season         int16
+	HomeTeamID     pgtype.UUID
+	AwayTeamID     pgtype.UUID
+	Status         string
+	MatchTime      pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
 }
 
 func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtype.UUID, error) {
@@ -45,6 +117,8 @@ func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtyp
 		arg.MatchTime,
 		arg.HomeScore,
 		arg.AwayScore,
+		arg.Stage,
+		arg.StageStartedAt,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

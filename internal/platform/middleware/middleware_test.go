@@ -219,3 +219,28 @@ func TestRequestTimeoutCancelsContext(t *testing.T) {
 		t.Errorf("status = %d, want context cancelled before handler finished", rec.Code)
 	}
 }
+
+func TestCORS(t *testing.T) {
+	h := CORS([]string{"https://app.example.com"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/login", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent ||
+		rec.Header().Get("Access-Control-Allow-Origin") != "https://app.example.com" ||
+		rec.Header().Get("Access-Control-Allow-Credentials") != "true" {
+		t.Errorf("preflight: %d %v", rec.Code, rec.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("foreign origin allowed: %q", got)
+	}
+}

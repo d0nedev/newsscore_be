@@ -3,6 +3,7 @@ package match
 import (
 	"encoding/json"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -109,15 +110,47 @@ func toMatchResponse(m db.ListMatchesRow) MatchResponse {
 		Home:   TeamResponse{ID: m.HomeID.String(), Name: m.HomeName, Badge: m.HomeShortName, Logo: m.HomeLogoUrl.String},
 		Away:   TeamResponse{ID: m.AwayID.String(), Name: m.AwayName, Badge: m.AwayShortName, Logo: m.AwayLogoUrl.String},
 	}
-	// ponytail: live minute is not stored yet, so live matches show "LIVE" until the ingestor records it.
 	if m.Status == "live" {
-		resp.Time = "LIVE"
+		resp.Time = liveMinute(m.Stage, m.StageStartedAt, time.Now())
 	}
 	if m.HomeScore.Valid && m.AwayScore.Valid && m.Status != "scheduled" {
 		resp.Score = &[2]int{int(m.HomeScore.Int16), int(m.AwayScore.Int16)}
 	}
 
 	return resp
+}
+
+// Flashscore stage codes seen in the feeds.
+const (
+	stageFirstHalf  = 12
+	stageSecondHalf = 13
+	stageHalfTime   = 38
+)
+
+// liveMinute derives the running minute the way Flashscore's own page does:
+// from when the current half started, capped at "45+" / "90+" for stoppage time.
+func liveMinute(stage pgtype.Int2, startedAt pgtype.Timestamptz, now time.Time) string {
+	if stage.Int16 == stageHalfTime {
+		return "HT"
+	}
+	if !stage.Valid || !startedAt.Valid {
+		return "LIVE"
+	}
+
+	elapsed := int(now.Sub(startedAt.Time).Minutes()) + 1
+	switch stage.Int16 {
+	case stageFirstHalf:
+		if elapsed > 45 {
+			return "45+'"
+		}
+		return strconv.Itoa(max(elapsed, 1)) + "'"
+	case stageSecondHalf:
+		if elapsed > 45 {
+			return "90+'"
+		}
+		return strconv.Itoa(45+max(elapsed, 1)) + "'"
+	}
+	return "LIVE"
 }
 
 func toMatchDetailResponse(d matchDetail) MatchDetailResponse {

@@ -23,21 +23,28 @@ func NewWorker(queries *db.Queries, logger *slog.Logger, detailsPerRun int) *Wor
 	return &Worker{db: queries, logger: logger, detailsPerRun: detailsPerRun}
 }
 
-// Sync pulls the results page, then fills in details for finished matches that lack them.
+// Sync pulls the league page (fixtures and results), then fills in details for finished matches that lack them.
 func (w *Worker) Sync(ctx context.Context) error {
-	if err := w.syncResults(ctx); err != nil {
+	// Housekeeping rides along: the ingestor is the one process guaranteed to run alone.
+	if n, err := w.db.DeleteExpiredSessions(ctx); err != nil {
+		w.logger.Error("delete expired sessions failed", slog.Any("error", err))
+	} else if n > 0 {
+		w.logger.Info("expired sessions deleted", slog.Int64("count", n))
+	}
+
+	if err := w.syncLeague(ctx); err != nil {
 		return err
 	}
 	return w.syncDetails(ctx)
 }
 
-func (w *Worker) syncResults(ctx context.Context) error {
-	matches, teams, err := flashscore.ScrapeResults()
+func (w *Worker) syncLeague(ctx context.Context) error {
+	matches, teams, err := flashscore.ScrapeLeague()
 	if err != nil {
-		return fmt.Errorf("scrape results: %w", err)
+		return fmt.Errorf("scrape league: %w", err)
 	}
 
-	w.logger.Info("results scraped", slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
+	w.logger.Info("league scraped", slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
 
 	teamIDs := make(map[string]pgtype.UUID, len(teams))
 	for _, t := range teams {
@@ -66,14 +73,16 @@ func (w *Worker) syncResults(ctx context.Context) error {
 		season := int16(m.Season)
 
 		_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
-			FlashscoreID: m.FlashscoreID,
-			Season:       season,
-			HomeTeamID:   homeID,
-			AwayTeamID:   awayID,
-			Status:       m.Status,
-			MatchTime:    pgtype.Timestamptz{Time: m.MatchTime, Valid: !m.MatchTime.IsZero()},
-			HomeScore:    pgtype.Int2{Int16: int16(m.HomeScore), Valid: true},
-			AwayScore:    pgtype.Int2{Int16: int16(m.AwayScore), Valid: true},
+			FlashscoreID:   m.FlashscoreID,
+			Season:         season,
+			HomeTeamID:     homeID,
+			AwayTeamID:     awayID,
+			Status:         m.Status,
+			MatchTime:      pgtype.Timestamptz{Time: m.MatchTime, Valid: !m.MatchTime.IsZero()},
+			HomeScore:      pgtype.Int2{Int16: int16(m.HomeScore), Valid: m.Status != "scheduled"},
+			AwayScore:      pgtype.Int2{Int16: int16(m.AwayScore), Valid: m.Status != "scheduled"},
+			Stage:          pgtype.Int2{Int16: int16(m.Stage), Valid: m.Stage != 0},
+			StageStartedAt: pgtype.Timestamptz{Time: m.StageStartedAt, Valid: !m.StageStartedAt.IsZero()},
 		})
 		if err != nil {
 			w.logger.Error("upsert match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
@@ -163,17 +172,8 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDe
 		return m.HomeTeamID
 	}
 
-	for _, e := range events {
-		if err := w.db.UpsertMatchEvent(ctx, db.UpsertMatchEventParams{
-			MatchID:      m.ID,
-			FlashscoreID: e.ID,
-			Type:         e.Type,
-			Minute:       e.Minute,
-			PlayerName:   e.PlayerName,
-			TeamID:       teamBySide(e.Team),
-		}); err != nil {
-			return fmt.Errorf("upsert event %s: %w", e.ID, err)
-		}
+	if err := w.saveEvents(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, events); err != nil {
+		return err
 	}
 
 	for _, p := range players {
@@ -198,4 +198,70 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDe
 
 	// Stats go last: their row marks the match as done, so a failure above retries it.
 	return w.db.UpsertMatchStats(ctx, db.UpsertMatchStatsParams{MatchID: m.ID, Stats: raw})
+}
+
+// SyncLive refreshes score, stage, and events of matches in play. It is cheap when
+// nothing is live: one indexed query and no requests to Flashscore.
+func (w *Worker) SyncLive(ctx context.Context) error {
+	candidates, err := w.db.ListLiveCandidates(ctx)
+	if err != nil {
+		return fmt.Errorf("list live candidates: %w", err)
+	}
+
+	for _, m := range candidates {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := w.syncLiveMatch(ctx, m); err != nil {
+			w.logger.Error("sync live match failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
+		}
+	}
+
+	return nil
+}
+
+func (w *Worker) syncLiveMatch(ctx context.Context, m db.ListLiveCandidatesRow) error {
+	state, err := flashscore.ScrapeLive(m.FlashscoreID)
+	if err != nil {
+		return err
+	}
+
+	if state.Status != "scheduled" {
+		events, err := flashscore.ScrapeEvents(m.FlashscoreID)
+		if err != nil {
+			return err
+		}
+		if err := w.saveEvents(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, events); err != nil {
+			return err
+		}
+	}
+
+	return w.db.UpdateMatchLive(ctx, db.UpdateMatchLiveParams{
+		ID:             m.ID,
+		Status:         state.Status,
+		Stage:          pgtype.Int2{Int16: int16(state.Stage), Valid: state.Stage != 0},
+		StageStartedAt: pgtype.Timestamptz{Time: state.StageStartedAt, Valid: !state.StageStartedAt.IsZero()},
+		HomeScore:      pgtype.Int2{Int16: int16(state.HomeScore), Valid: state.Status != "scheduled"},
+		AwayScore:      pgtype.Int2{Int16: int16(state.AwayScore), Valid: state.Status != "scheduled"},
+	})
+}
+
+func (w *Worker) saveEvents(ctx context.Context, matchID, homeID, awayID pgtype.UUID, events []flashscore.MatchEvent) error {
+	for _, e := range events {
+		team := homeID
+		if e.Team == 2 {
+			team = awayID
+		}
+		if err := w.db.UpsertMatchEvent(ctx, db.UpsertMatchEventParams{
+			MatchID:      matchID,
+			FlashscoreID: e.ID,
+			Type:         e.Type,
+			Minute:       e.Minute,
+			PlayerName:   e.PlayerName,
+			TeamID:       team,
+		}); err != nil {
+			return fmt.Errorf("upsert event %s: %w", e.ID, err)
+		}
+	}
+	return nil
 }

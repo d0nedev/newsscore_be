@@ -12,7 +12,7 @@ import (
 )
 
 const getMatch = `-- name: GetMatch :one
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score,
+SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
        h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
        a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
 FROM matches m
@@ -22,19 +22,21 @@ WHERE m.id = $1
 `
 
 type GetMatchRow struct {
-	ID            pgtype.UUID
-	Status        string
-	MatchTime     pgtype.Timestamptz
-	HomeScore     pgtype.Int2
-	AwayScore     pgtype.Int2
-	HomeID        pgtype.UUID
-	HomeName      string
-	HomeShortName string
-	HomeLogoUrl   pgtype.Text
-	AwayID        pgtype.UUID
-	AwayName      string
-	AwayShortName string
-	AwayLogoUrl   pgtype.Text
+	ID             pgtype.UUID
+	Status         string
+	MatchTime      pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
+	HomeID         pgtype.UUID
+	HomeName       string
+	HomeShortName  string
+	HomeLogoUrl    pgtype.Text
+	AwayID         pgtype.UUID
+	AwayName       string
+	AwayShortName  string
+	AwayLogoUrl    pgtype.Text
 }
 
 func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (GetMatchRow, error) {
@@ -46,6 +48,8 @@ func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (GetMatchRow, er
 		&i.MatchTime,
 		&i.HomeScore,
 		&i.AwayScore,
+		&i.Stage,
+		&i.StageStartedAt,
 		&i.HomeID,
 		&i.HomeName,
 		&i.HomeShortName,
@@ -109,7 +113,7 @@ func (q *Queries) ListMatchEvents(ctx context.Context, matchID pgtype.UUID) ([]L
 }
 
 const listMatches = `-- name: ListMatches :many
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score,
+SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
        h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
        a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
 FROM matches m
@@ -129,19 +133,21 @@ type ListMatchesParams struct {
 }
 
 type ListMatchesRow struct {
-	ID            pgtype.UUID
-	Status        string
-	MatchTime     pgtype.Timestamptz
-	HomeScore     pgtype.Int2
-	AwayScore     pgtype.Int2
-	HomeID        pgtype.UUID
-	HomeName      string
-	HomeShortName string
-	HomeLogoUrl   pgtype.Text
-	AwayID        pgtype.UUID
-	AwayName      string
-	AwayShortName string
-	AwayLogoUrl   pgtype.Text
+	ID             pgtype.UUID
+	Status         string
+	MatchTime      pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
+	HomeID         pgtype.UUID
+	HomeName       string
+	HomeShortName  string
+	HomeLogoUrl    pgtype.Text
+	AwayID         pgtype.UUID
+	AwayName       string
+	AwayShortName  string
+	AwayLogoUrl    pgtype.Text
 }
 
 func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]ListMatchesRow, error) {
@@ -164,6 +170,8 @@ func (q *Queries) ListMatches(ctx context.Context, arg ListMatchesParams) ([]Lis
 			&i.MatchTime,
 			&i.HomeScore,
 			&i.AwayScore,
+			&i.Stage,
+			&i.StageStartedAt,
 			&i.HomeID,
 			&i.HomeName,
 			&i.HomeShortName,

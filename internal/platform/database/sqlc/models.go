@@ -5,21 +5,25 @@
 package db
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Match struct {
-	ID           pgtype.UUID
-	FlashscoreID string
-	Season       int16
-	HomeTeamID   pgtype.UUID
-	AwayTeamID   pgtype.UUID
-	Status       string
-	MatchTime    pgtype.Timestamptz
-	HomeScore    pgtype.Int2
-	AwayScore    pgtype.Int2
-	DataAsOf     pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID             pgtype.UUID
+	FlashscoreID   string
+	Season         int16
+	HomeTeamID     pgtype.UUID
+	AwayTeamID     pgtype.UUID
+	Status         string
+	MatchTime      pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+	DataAsOf       pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
 }
 
 type MatchEvent struct {
@@ -50,6 +54,15 @@ type Player struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
+type Session struct {
+	TokenHash []byte
+	UserID    pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	UserAgent pgtype.Text
+	Ip        *netip.Addr
+}
+
 type Standing struct {
 	Season    int16
 	TeamID    pgtype.UUID
@@ -67,4 +80,13 @@ type Team struct {
 	ShortName    string
 	LogoUrl      pgtype.Text
 	UpdatedAt    pgtype.Timestamptz
+}
+
+type User struct {
+	ID           pgtype.UUID
+	Email        string
+	PasswordHash string
+	Name         string
+	Role         string
+	CreatedAt    pgtype.Timestamptz
 }

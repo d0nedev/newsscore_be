@@ -40,6 +40,9 @@ func run() int {
 		IdleTimeout:       cfg.IdleTimeout,
 	}
 
+	// Shutdown waits for open connections; SSE streams never finish on their own.
+	server.RegisterOnShutdown(application.Hub.Close)
+
 	serverErrCh := make(chan error, 1)
 
 	go func() {

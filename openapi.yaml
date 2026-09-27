@@ -13,6 +13,8 @@ servers:
     description: Local
 
 tags:
+  - name: auth
+    description: "Login with an HttpOnly session cookie (`session`). Browsers must send `credentials: include`."
   - name: matches
     description: Pertandingan sepak bola. Tanggal dalam zona WIB.
   - name: health
@@ -21,6 +23,77 @@ tags:
 security: []
 
 paths:
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Sign in; sets the session cookie
+      description: Limited to 10 attempts per IP per minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, maxLength: 1024 }
+      responses:
+        "200":
+          description: Signed in
+          headers:
+            Set-Cookie:
+              description: "`session=<token>; HttpOnly; SameSite=Lax; Secure` (Secure outside development)"
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [user]
+                    properties:
+                      user: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Wrong email or password (`INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Sign out; deletes the session and clears the cookie
+      responses:
+        "204": { description: Signed out (also when no session was present) }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/me:
+    get:
+      tags: [auth]
+      operationId: me
+      summary: The signed-in user
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /api/v1/matches:
     get:
       tags: [matches]
@@ -43,6 +116,30 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
+
+  /api/v1/matches/stream:
+    get:
+      tags: [matches]
+      operationId: streamMatches
+      summary: Server-Sent Events for live matches
+      description: |
+        One stream for every match; clients filter by `id`/`matchId`. Events:
+
+        - `score`: `ScoreUpdate`, sent when status, stage, or score changes.
+        - `match_event`: `MatchEventUpdate`, sent when a new incident is recorded.
+
+        A `: ping` comment arrives every 20s. The server closes streams after 30 minutes
+        and on deploy; `EventSource` reconnects on its own (`retry: 3000`). Events missed
+        while disconnected are not replayed, so refetch `/api/v1/matches` after reconnecting.
+      responses:
+        "200":
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Server is shutting down
 
   /api/v1/matches/{id}:
     get:
@@ -97,6 +194,10 @@ paths:
 
 components:
   securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
     apiKey:
       type: apiKey
       in: header
@@ -104,6 +205,14 @@ components:
       description: Required on write endpoints outside `APP_ENV=development`.
 
   schemas:
+    User:
+      type: object
+      required: [id, email, name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+
     MatchStatus:
       type: string
       enum: [scheduled, live, finished]
@@ -132,6 +241,31 @@ components:
           items: { type: integer }
           minItems: 2
           maxItems: 2
+
+    ScoreUpdate:
+      type: object
+      required: [id, status, time, score]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/MatchStatus" }
+        time:
+          type: string
+          description: Menit berjalan saat live (`67'`, `HT`, `90+'`), kosong bila tidak live
+        score:
+          type: [array, "null"]
+          items: { type: integer }
+          minItems: 2
+          maxItems: 2
+
+    MatchEventUpdate:
+      type: object
+      required: [matchId, minute, team, type, player]
+      properties:
+        matchId: { type: string, format: uuid }
+        minute: { type: string }
+        team: { type: string, enum: [home, away, ""] }
+        type: { type: string }
+        player: { type: string }
 
     MatchDetail:
       allOf:
@@ -187,7 +321,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Unauthorized:
-      description: Missing or invalid API key (`UNAUTHORIZED`)
+      description: Not signed in or session expired (`UNAUTHORIZED`)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

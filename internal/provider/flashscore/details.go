@@ -4,9 +4,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"strconv"
 	"time"
 )
+
+// fsign is the x-fsign header Flashscore's feeds require; it changes now and then (see docs/files/07-scraping-flashscore.md).
+var fsign = "SW9D1eZo"
+
+// SetFSign overrides the x-fsign header, e.g. from FLASHSCORE_FSIGN.
+func SetFSign(v string) {
+	if v != "" {
+		fsign = v
+	}
+}
 
 func fetchFeed(feedType, matchID string) ([]map[string]string, error) {
 	// Add delay to prevent IP blocking
@@ -18,7 +28,7 @@ func fetchFeed(feedType, matchID string) ([]map[string]string, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0")
-	req.Header.Set("x-fsign", "SW9D1eZo")
+	req.Header.Set("x-fsign", fsign)
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -30,27 +40,11 @@ func fetchFeed(feedType, matchID string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("unexpected status %d", res.StatusCode)
 	}
 
-	body, _ := io.ReadAll(res.Body)
-	records := strings.Split(string(body), "¬~")
-
-	var out []map[string]string
-	for _, r := range records {
-		if strings.TrimSpace(r) == "" {
-			continue
-		}
-		parts := strings.Split(r, "¬")
-		m := make(map[string]string)
-		for _, p := range parts {
-			kv := strings.SplitN(p, "÷", 2)
-			if len(kv) == 2 {
-				m[kv[0]] = kv[1]
-			}
-		}
-		if len(m) > 0 {
-			out = append(out, m)
-		}
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	return parseRecords(string(body)), nil
 }
 
 type MatchEvent struct {
@@ -93,26 +87,7 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 	}
 
 	// 2. Events
-	eventsRec, eventsErr := fetchFeed("df_sui_1", matchID)
-	var events []MatchEvent
-	if eventsErr == nil {
-		for _, m := range eventsRec {
-			if id, ok := m["III"]; ok {
-				team := 1
-				if m["IA"] == "2" {
-					team = 2
-				}
-				events = append(events, MatchEvent{
-					ID:         id,
-					PlayerName: m["IF"],
-					PlayerID:   m["IM"],
-					Minute:     m["IB"],
-					Type:       m["IK"],
-					Team:       team,
-				})
-			}
-		}
-	}
+	events, eventsErr := ScrapeEvents(matchID)
 
 	// 3. Lineups (Players)
 	lineupsRec, err := fetchFeed("df_li_1", matchID)
@@ -144,4 +119,66 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 	}
 
 	return events, stats, players, nil
+}
+
+// ScrapeEvents reads the match incidents feed (goals, cards, substitutions).
+func ScrapeEvents(matchID string) ([]MatchEvent, error) {
+	records, err := fetchFeed("df_sui_1", matchID)
+	if err != nil {
+		return nil, err
+	}
+
+	var events []MatchEvent
+	for _, m := range records {
+		if id, ok := m["III"]; ok {
+			team := 1
+			if m["IA"] == "2" {
+				team = 2
+			}
+			events = append(events, MatchEvent{
+				ID:         id,
+				PlayerName: m["IF"],
+				PlayerID:   m["IM"],
+				Minute:     m["IB"],
+				Type:       m["IK"],
+				Team:       team,
+			})
+		}
+	}
+	return events, nil
+}
+
+// LiveState is the small "dc_1" core feed: status, stage, and score of one match.
+type LiveState struct {
+	Status         string
+	Stage          int
+	StageStartedAt time.Time
+	HomeScore      int
+	AwayScore      int
+}
+
+func ScrapeLive(matchID string) (LiveState, error) {
+	records, err := fetchFeed("dc_1", matchID)
+	if err != nil {
+		return LiveState{}, err
+	}
+	if len(records) == 0 || records[0]["DA"] == "" {
+		return LiveState{}, fmt.Errorf("empty live feed for %s", matchID)
+	}
+
+	return parseLive(records[0]), nil
+}
+
+func parseLive(m map[string]string) LiveState {
+	stage, _ := strconv.Atoi(m["DB"])
+	home, _ := strconv.Atoi(m["DE"])
+	away, _ := strconv.Atoi(m["DF"])
+
+	return LiveState{
+		Status:         status(m["DA"]),
+		Stage:          stage,
+		StageStartedAt: unix(m["DD"]),
+		HomeScore:      home,
+		AwayScore:      away,
+	}
 }

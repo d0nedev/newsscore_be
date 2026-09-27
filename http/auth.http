@@ -1,0 +1,11 @@
+### Login (create a user first: printf '%s\n' "$PASSWORD" | go run ./cmd/useradd -email you@example.com -name You)
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{"email":"you@example.com","password":"change-me-please"}
+
+### Current user (needs the session cookie from login)
+GET http://localhost:8080/api/v1/me
+
+### Logout
+POST http://localhost:8080/api/v1/auth/logout

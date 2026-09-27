@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	matches, teams, err := flashscore.ScrapeResults()
+	matches, teams, err := flashscore.ScrapeLeague()
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

@@ -12,6 +12,7 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/logging"
 	"github.com/d0nedev/newsscore/internal/platform/metrics"
 	"github.com/d0nedev/newsscore/internal/platform/middleware"
+	"github.com/d0nedev/newsscore/internal/platform/stream"
 	"github.com/d0nedev/newsscore/internal/platform/tracing"
 	"log/slog"
 	"net/http"
@@ -38,6 +39,10 @@ type App struct {
 	TraceProvider  *trace.TracerProvider
 	MetricProvider *sdkmetric.MeterProvider
 	Health         *health.Handler
+	// Hub holds the open SSE streams; close it when shutdown starts so they do not block draining.
+	Hub *stream.Hub
+
+	stopBackground context.CancelFunc
 }
 
 func New(ctx context.Context, version string) (*App, error) {
@@ -100,7 +105,11 @@ func New(ctx context.Context, version string) (*App, error) {
 
 	healthHandler := health.NewHandler(pool)
 
-	router := newRouter(cfg, logger, healthHandler, modules(cfg, logger, pool, tp)...)
+	// Background work (LISTEN for live updates) lives until Shutdown, not until ctx.
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	hub := stream.NewHub(logger)
+
+	router := newRouter(cfg, logger, healthHandler, modules(bgCtx, cfg, logger, pool, tp, hub)...)
 
 	handler := otelhttp.NewHandler(router, cfg.App.ServiceName,
 		otelhttp.WithFilter(func(r *http.Request) bool {
@@ -116,11 +125,20 @@ func New(ctx context.Context, version string) (*App, error) {
 		TraceProvider:  tp,
 		MetricProvider: meterProvider,
 		Health:         healthHandler,
+		Hub:            hub,
+		stopBackground: stopBackground,
 	}, nil
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
 	var errs []error
+
+	if a.stopBackground != nil {
+		a.stopBackground()
+	}
+	if a.Hub != nil {
+		a.Hub.Close()
+	}
 
 	if a.MetricProvider != nil {
 		if err := metrics.Shutdown(ctx, a.MetricProvider); err != nil {
@@ -155,6 +173,7 @@ func newRouter(
 	router.Use(middleware.ClientIP(cfg.App.TrustedProxies))
 	router.Use(middleware.RequestID)
 	router.Use(middleware.SecurityHeaders)
+	router.Use(middleware.CORS(cfg.Auth.AllowedOrigins))
 	router.Use(middleware.Logging(logger, livenessPath, readinessPath))
 	router.Use(middleware.RouteTag)
 	router.Use(middleware.Recovery(logger))

@@ -3,7 +3,7 @@ package middleware
 import "net/http"
 
 // SecurityHeaders sets headers appropriate for a JSON-only API. HSTS is left to
-// the TLS terminator; CORS is intentionally absent until a browser client exists.
+// the TLS terminator; CORS lives in cors.go.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()

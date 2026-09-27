@@ -1,5 +1,5 @@
 -- name: ListMatches :many
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score,
+SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
        h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
        a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
 FROM matches m
@@ -11,7 +11,7 @@ WHERE m.match_time >= sqlc.arg(from_time) AND m.match_time < sqlc.arg(to_time)
 ORDER BY m.match_time, m.id;
 
 -- name: GetMatch :one
-SELECT m.id, m.status, m.match_time, m.home_score, m.away_score,
+SELECT m.id, m.status, m.match_time, m.home_score, m.away_score, m.stage, m.stage_started_at,
        h.id AS home_id, h.name AS home_name, h.short_name AS home_short_name, h.logo_url AS home_logo_url,
        a.id AS away_id, a.name AS away_name, a.short_name AS away_short_name, a.logo_url AS away_logo_url
 FROM matches m

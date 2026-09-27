@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/d0nedev/newsscore/internal/platform/database"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/platform/logging"
+	"github.com/d0nedev/newsscore/internal/provider/flashscore"
 )
 
 // Run exactly one ingestor: two instances would scrape twice and double the block risk.
@@ -43,24 +45,39 @@ func run() int {
 	}
 	defer pool.Close()
 
+	flashscore.SetFSign(cfg.Ingest.FSign)
 	worker := ingest.NewWorker(db.New(pool), logger, cfg.Ingest.DetailsPerRun)
-	logger.Info("ingestor started", slog.Duration("interval", cfg.Ingest.Interval))
+	logger.Info("ingestor started",
+		slog.Duration("interval", cfg.Ingest.Interval),
+		slog.Duration("live_interval", cfg.Ingest.LiveInterval),
+	)
 
-	ticker := time.NewTicker(cfg.Ingest.Interval)
+	// Separate loops: a slow league sync (details backfill) must not delay live scores.
+	var wg sync.WaitGroup
+	wg.Go(func() { every(ctx, logger, "league", cfg.Ingest.Interval, worker.Sync) })
+	wg.Go(func() { every(ctx, logger, "live", cfg.Ingest.LiveInterval, worker.SyncLive) })
+	wg.Wait()
+
+	logger.Info("ingestor stopped")
+	return 0
+}
+
+// every runs fn now and then on each tick until ctx is done.
+func every(ctx context.Context, logger *slog.Logger, name string, interval time.Duration, fn func(context.Context) error) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		started := time.Now()
-		if err := worker.Sync(ctx); err != nil && ctx.Err() == nil {
-			logger.Error("sync failed", slog.Any("error", err))
+		if err := fn(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("sync failed", slog.String("loop", name), slog.Any("error", err))
 		} else {
-			logger.Info("sync done", slog.Duration("took", time.Since(started)))
+			logger.Debug("sync done", slog.String("loop", name), slog.Duration("took", time.Since(started)))
 		}
 
 		select {
 		case <-ctx.Done():
-			logger.Info("ingestor stopped")
-			return 0
+			return
 		case <-ticker.C:
 		}
 	}
