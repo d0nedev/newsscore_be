@@ -51,7 +51,8 @@ func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (GetPlayerRow, 
 }
 
 const listPlayerMatches = `-- name: ListPlayerMatches :many
-SELECT m.id, m.match_time, m.status, m.home_score, m.away_score,
+SELECT m.id, m.match_time, m.status, m.home_score, m.away_score, m.round,
+       c.slug AS competition_slug, c.name AS competition_name,
        l.starter, l.team_id,
        h.name AS home_name, a.name AS away_name,
        m.home_team_id,
@@ -69,37 +70,48 @@ FROM match_lineups l
 JOIN matches m ON m.id = l.match_id
 JOIN teams h ON h.id = m.home_team_id
 JOIN teams a ON a.id = m.away_team_id
+JOIN competitions c ON c.id = m.competition_id
 WHERE l.player_id = $2::uuid AND m.season = $3::smallint
+  AND ($4::uuid IS NULL OR m.competition_id = $4::uuid)
 ORDER BY m.match_time DESC
 `
 
 type ListPlayerMatchesParams struct {
-	FlashscoreID string
-	PlayerID     pgtype.UUID
-	Season       int16
+	FlashscoreID  string
+	PlayerID      pgtype.UUID
+	Season        int16
+	CompetitionID pgtype.UUID
 }
 
 type ListPlayerMatchesRow struct {
-	ID         pgtype.UUID
-	MatchTime  pgtype.Timestamptz
-	Status     string
-	HomeScore  pgtype.Int2
-	AwayScore  pgtype.Int2
-	Starter    bool
-	TeamID     pgtype.UUID
-	HomeName   string
-	AwayName   string
-	HomeTeamID pgtype.UUID
-	SubbedOn   bool
-	Goals      int32
-	Assists    int32
-	Yellow     int32
-	Red        int32
+	ID              pgtype.UUID
+	MatchTime       pgtype.Timestamptz
+	Status          string
+	HomeScore       pgtype.Int2
+	AwayScore       pgtype.Int2
+	Round           pgtype.Text
+	CompetitionSlug string
+	CompetitionName string
+	Starter         bool
+	TeamID          pgtype.UUID
+	HomeName        string
+	AwayName        string
+	HomeTeamID      pgtype.UUID
+	SubbedOn        bool
+	Goals           int32
+	Assists         int32
+	Yellow          int32
+	Red             int32
 }
 
-// Every match the player was listed for in a season, newest first, with what they did in it.
+// Every match the player was listed for in a season (optionally one competition), newest first, with what they did in it.
 func (q *Queries) ListPlayerMatches(ctx context.Context, arg ListPlayerMatchesParams) ([]ListPlayerMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listPlayerMatches, arg.FlashscoreID, arg.PlayerID, arg.Season)
+	rows, err := q.db.Query(ctx, listPlayerMatches,
+		arg.FlashscoreID,
+		arg.PlayerID,
+		arg.Season,
+		arg.CompetitionID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +125,9 @@ func (q *Queries) ListPlayerMatches(ctx context.Context, arg ListPlayerMatchesPa
 			&i.Status,
 			&i.HomeScore,
 			&i.AwayScore,
+			&i.Round,
+			&i.CompetitionSlug,
+			&i.CompetitionName,
 			&i.Starter,
 			&i.TeamID,
 			&i.HomeName,

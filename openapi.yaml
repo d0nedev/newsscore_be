@@ -259,6 +259,8 @@ paths:
       tags: [leagues]
       operationId: listLeagues
       summary: Competitions with their latest season
+      parameters:
+        - { name: standings, in: query, description: "`true` adds each competition's standings (groups for cups) in one response", schema: { type: boolean } }
       responses:
         "200":
           description: OK
@@ -301,8 +303,10 @@ paths:
       tags: [teams]
       operationId: getTeam
       summary: Team profile, squad with season numbers, last 5 and next 5 matches
+      description: Covers every competition in the latest season, or one with `leagueId`.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: leagueId, in: query, description: "Competition slug; its latest season", schema: { type: string } }
       responses:
         "200":
           description: OK
@@ -322,8 +326,10 @@ paths:
       tags: [teams]
       operationId: getPlayer
       summary: Player profile, season totals, and match log (newest first)
+      description: Covers every competition in the latest season, or one with `leagueId`; `competitions` splits the totals.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: leagueId, in: query, description: "Competition slug; its latest season", schema: { type: string } }
       responses:
         "200":
           description: OK
@@ -394,7 +400,9 @@ paths:
       operationId: listMatches
       summary: Pertandingan pada satu tanggal (WIB), urut jam kick-off
       parameters:
-        - { name: date, in: query, description: "`DD.MM.YYYY`, default hari ini (WIB)", schema: { type: string, example: "14.09.2026" } }
+        - { name: date, in: query, description: "`DD.MM.YYYY`, default hari ini (WIB). Tidak boleh bersama from/to.", schema: { type: string, example: "14.09.2026" } }
+        - { name: from, in: query, description: "Awal rentang `DD.MM.YYYY` (WIB), wajib bersama `to`", schema: { type: string, example: "14.09.2026" } }
+        - { name: to, in: query, description: "Akhir rentang, inklusif; paling lama 31 hari dari `from`", schema: { type: string, example: "20.09.2026" } }
         - { name: teamId, in: query, schema: { type: string, format: uuid } }
         - { name: leagueId, in: query, description: Competition slug, schema: { type: string } }
         - { name: status, in: query, schema: { $ref: "#/components/schemas/MatchStatus" } }
@@ -497,14 +505,27 @@ components:
   schemas:
     League:
       type: object
-      required: [id, name, country, type, season]
+      required: [id, name, country, countryId, type, season]
       properties:
         id: { type: string, description: Slug }
         name: { type: string }
         country: { type: string }
+        countryId: { type: string, description: 'Country slug, e.g. "indonesia"' }
         type: { type: string, enum: [league, cup] }
         season: { type: integer, description: 0 until a match is stored }
-        standings: { type: array, items: { $ref: "#/components/schemas/StandingRow" }, description: "Only on GET /leagues/{id}" }
+        standings: { type: array, items: { $ref: "#/components/schemas/StandingRow" }, description: "Only on GET /leagues/{id}; empty for cups" }
+        groups:
+          type: array
+          description: |
+            Cups only, on GET /leagues/{id}. Groups are derived from who played whom in the
+            group stage (the source does not label them), named A, B, … by their best-ranked
+            team, so the letters may differ from the official draw.
+          items:
+            type: object
+            required: [name, standings]
+            properties:
+              name: { type: string, example: Grup A }
+              standings: { type: array, items: { $ref: "#/components/schemas/StandingRow" } }
 
     TeamProfile:
       type: object
@@ -534,7 +555,7 @@ components:
 
     PlayerProfile:
       type: object
-      required: [id, name, team, season, matchLog]
+      required: [id, name, team, season, competitions, matchLog]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
@@ -558,6 +579,19 @@ components:
             assists: { type: integer }
             yellow: { type: integer }
             red: { type: integer }
+        competitions:
+          type: array
+          items:
+            type: object
+            properties:
+              leagueId: { type: string }
+              league: { type: string }
+              matches: { type: integer }
+              starts: { type: integer }
+              goals: { type: integer }
+              assists: { type: integer }
+              yellow: { type: integer }
+              red: { type: integer }
         matchLog:
           type: array
           items:
@@ -565,6 +599,9 @@ components:
             properties:
               date: { type: string, description: DD.MM.YYYY (WIB) }
               matchId: { type: string, format: uuid }
+              leagueId: { type: string }
+              league: { type: string }
+              round: { type: string }
               home: { type: string }
               away: { type: string }
               score: { type: [array, "null"], items: { type: integer } }
@@ -682,6 +719,7 @@ components:
         id: { type: string, format: uuid }
         leagueId: { type: string, description: Competition slug }
         league: { type: string }
+        round: { type: string, example: Round 3 }
         status: { $ref: "#/components/schemas/MatchStatus" }
         time: { type: string, description: 'Jam kick-off WIB "HH:MM", atau "LIVE"' }
         date: { type: string, description: '"DD.MM.YYYY" (WIB)' }

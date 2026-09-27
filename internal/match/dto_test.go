@@ -20,8 +20,17 @@ func TestParseListFilter(t *testing.T) {
 		t.Errorf("From = %v, want %v", f.From.UTC(), want)
 	}
 
+	r, err := parseListFilter(url.Values{"from": {"14.09.2026"}, "to": {"20.09.2026"}})
+	if err != nil || r.To.Sub(r.From) != 7*24*time.Hour {
+		t.Errorf("range = %v..%v, %v; want 7 days", r.From, r.To, err)
+	}
+
 	for _, bad := range []url.Values{
 		{"date": {"2026-09-14"}},
+		{"from": {"14.09.2026"}},
+		{"from": {"20.09.2026"}, "to": {"14.09.2026"}},
+		{"from": {"01.09.2026"}, "to": {"02.10.2026"}}, // 32 days
+		{"date": {"14.09.2026"}, "from": {"14.09.2026"}, "to": {"15.09.2026"}},
 		{"status": {"done"}},
 		{"teamId": {"x"}},
 	} {

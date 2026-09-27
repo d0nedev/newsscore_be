@@ -3,10 +3,12 @@ package team
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"uuid"
 
+	"github.com/d0nedev/newsscore/internal/league"
 	"github.com/d0nedev/newsscore/internal/match"
 	"github.com/d0nedev/newsscore/internal/platform/apperror"
 	"github.com/d0nedev/newsscore/internal/platform/database"
@@ -40,7 +42,8 @@ type profile struct {
 	Upcoming []db.MatchRow
 }
 
-func (s *Service) Profile(ctx context.Context, id uuid.UUID) (profile, error) {
+// Profile covers every competition, or only leagueSlug when set.
+func (s *Service) Profile(ctx context.Context, id uuid.UUID, leagueSlug string) (profile, error) {
 	ctx, span := s.tracer.Start(ctx, "TeamService.Profile")
 	defer span.End()
 
@@ -56,19 +59,22 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (profile, error) {
 		}
 		return fail("failed to get team", err)
 	}
-	season, err := s.queries.LatestSeason(ctx)
+	competition, season, err := league.Scope(ctx, s.queries, leagueSlug)
 	if err != nil {
+		if _, ok := errors.AsType[*apperror.Error](err); ok {
+			return profile{}, err
+		}
 		return fail("failed to find season", err)
 	}
-	squad, err := s.queries.ListTeamSquad(ctx, db.ListTeamSquadParams{Season: season, TeamID: teamID})
+	squad, err := s.queries.ListTeamSquad(ctx, db.ListTeamSquadParams{Season: season, TeamID: teamID, CompetitionID: competition})
 	if err != nil {
 		return fail("failed to list squad", err)
 	}
-	recent, err := s.queries.ListTeamRecentMatches(ctx, teamID)
+	recent, err := s.queries.ListTeamRecentMatches(ctx, db.ListTeamRecentMatchesParams{TeamID: teamID, CompetitionID: competition})
 	if err != nil {
 		return fail("failed to list matches", err)
 	}
-	upcoming, err := s.queries.ListTeamUpcomingMatches(ctx, teamID)
+	upcoming, err := s.queries.ListTeamUpcomingMatches(ctx, db.ListTeamUpcomingMatchesParams{TeamID: teamID, CompetitionID: competition})
 	if err != nil {
 		return fail("failed to list matches", err)
 	}
@@ -116,7 +122,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 		return apperror.Validation("invalid team id")
 	}
 
-	p, err := h.service.Profile(r.Context(), id)
+	p, err := h.service.Profile(r.Context(), id, r.URL.Query().Get("leagueId"))
 	if err != nil {
 		return err
 	}

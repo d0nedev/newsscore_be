@@ -6,8 +6,9 @@ LEFT JOIN teams t ON t.id = p.team_id
 WHERE p.id = $1;
 
 -- name: ListPlayerMatches :many
--- Every match the player was listed for in a season, newest first, with what they did in it.
-SELECT m.id, m.match_time, m.status, m.home_score, m.away_score,
+-- Every match the player was listed for in a season (optionally one competition), newest first, with what they did in it.
+SELECT m.id, m.match_time, m.status, m.home_score, m.away_score, m.round,
+       c.slug AS competition_slug, c.name AS competition_name,
        l.starter, l.team_id,
        h.name AS home_name, a.name AS away_name,
        m.home_team_id,
@@ -25,5 +26,7 @@ FROM match_lineups l
 JOIN matches m ON m.id = l.match_id
 JOIN teams h ON h.id = m.home_team_id
 JOIN teams a ON a.id = m.away_team_id
+JOIN competitions c ON c.id = m.competition_id
 WHERE l.player_id = sqlc.arg(player_id)::uuid AND m.season = sqlc.arg(season)::smallint
+  AND (sqlc.narg(competition_id)::uuid IS NULL OR m.competition_id = sqlc.narg(competition_id)::uuid)
 ORDER BY m.match_time DESC;

@@ -35,14 +35,20 @@ func (q *Queries) GetTeam(ctx context.Context, id pgtype.UUID) (GetTeamRow, erro
 }
 
 const listTeamRecentMatches = `-- name: ListTeamRecentMatches :many
-SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name FROM match_rows
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name, competition_sort, round, phase FROM match_rows
 WHERE $1::uuid IN (home_team_id, away_team_id) AND status <> 'scheduled'
+  AND ($2::uuid IS NULL OR competition_id = $2::uuid)
 ORDER BY match_time DESC
 LIMIT 5
 `
 
-func (q *Queries) ListTeamRecentMatches(ctx context.Context, teamID pgtype.UUID) ([]MatchRow, error) {
-	rows, err := q.db.Query(ctx, listTeamRecentMatches, teamID)
+type ListTeamRecentMatchesParams struct {
+	TeamID        pgtype.UUID
+	CompetitionID pgtype.UUID
+}
+
+func (q *Queries) ListTeamRecentMatches(ctx context.Context, arg ListTeamRecentMatchesParams) ([]MatchRow, error) {
+	rows, err := q.db.Query(ctx, listTeamRecentMatches, arg.TeamID, arg.CompetitionID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +76,9 @@ func (q *Queries) ListTeamRecentMatches(ctx context.Context, teamID pgtype.UUID)
 			&i.CompetitionID,
 			&i.CompetitionSlug,
 			&i.CompetitionName,
+			&i.CompetitionSort,
+			&i.Round,
+			&i.Phase,
 		); err != nil {
 			return nil, err
 		}
@@ -84,24 +93,25 @@ func (q *Queries) ListTeamRecentMatches(ctx context.Context, teamID pgtype.UUID)
 const listTeamSquad = `-- name: ListTeamSquad :many
 SELECT p.id, p.name, p.shirt_number, p.position, p.nationality,
        (SELECT count(*) FROM match_lineups l JOIN matches m ON m.id = l.match_id
-         WHERE l.player_id = p.id AND m.season = $1::smallint
+         WHERE l.player_id = p.id AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid)
            AND (l.starter OR EXISTS (SELECT 1 FROM match_events e
                                       WHERE e.match_id = l.match_id AND e.type = 'Substitution'
                                         AND e.player_flashscore_id = p.flashscore_id)))::int AS apps,
        (SELECT count(*) FROM match_events e JOIN matches m ON m.id = e.match_id
          WHERE e.player_flashscore_id = p.flashscore_id AND e.type IN ('Goal', 'Penalty')
-           AND m.season = $1::smallint)::int AS goals,
+           AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid))::int AS goals,
        (SELECT count(*) FROM match_events e JOIN matches m ON m.id = e.match_id
          WHERE e.related_flashscore_id = p.flashscore_id AND e.type IN ('Goal', 'Penalty')
-           AND m.season = $1::smallint)::int AS assists
+           AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid))::int AS assists
 FROM players p
-WHERE p.team_id = $2::uuid
+WHERE p.team_id = $3::uuid
 ORDER BY p.position = 'GK' DESC, p.shirt_number NULLS LAST, p.name
 `
 
 type ListTeamSquadParams struct {
-	Season int16
-	TeamID pgtype.UUID
+	Season        int16
+	CompetitionID pgtype.UUID
+	TeamID        pgtype.UUID
 }
 
 type ListTeamSquadRow struct {
@@ -115,9 +125,9 @@ type ListTeamSquadRow struct {
 	Assists     int32
 }
 
-// Current squad with season numbers. An appearance is a start or a substitution on.
+// Current squad with season numbers, optionally for one competition. An appearance is a start or a substitution on.
 func (q *Queries) ListTeamSquad(ctx context.Context, arg ListTeamSquadParams) ([]ListTeamSquadRow, error) {
-	rows, err := q.db.Query(ctx, listTeamSquad, arg.Season, arg.TeamID)
+	rows, err := q.db.Query(ctx, listTeamSquad, arg.Season, arg.CompetitionID, arg.TeamID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +156,20 @@ func (q *Queries) ListTeamSquad(ctx context.Context, arg ListTeamSquadParams) ([
 }
 
 const listTeamUpcomingMatches = `-- name: ListTeamUpcomingMatches :many
-SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name FROM match_rows
+SELECT id, season, status, match_time, home_score, away_score, stage, stage_started_at, home_team_id, away_team_id, home_name, home_short_name, home_logo_url, away_name, away_short_name, away_logo_url, competition_id, competition_slug, competition_name, competition_sort, round, phase FROM match_rows
 WHERE $1::uuid IN (home_team_id, away_team_id) AND status = 'scheduled'
+  AND ($2::uuid IS NULL OR competition_id = $2::uuid)
 ORDER BY match_time
 LIMIT 5
 `
 
-func (q *Queries) ListTeamUpcomingMatches(ctx context.Context, teamID pgtype.UUID) ([]MatchRow, error) {
-	rows, err := q.db.Query(ctx, listTeamUpcomingMatches, teamID)
+type ListTeamUpcomingMatchesParams struct {
+	TeamID        pgtype.UUID
+	CompetitionID pgtype.UUID
+}
+
+func (q *Queries) ListTeamUpcomingMatches(ctx context.Context, arg ListTeamUpcomingMatchesParams) ([]MatchRow, error) {
+	rows, err := q.db.Query(ctx, listTeamUpcomingMatches, arg.TeamID, arg.CompetitionID)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +197,9 @@ func (q *Queries) ListTeamUpcomingMatches(ctx context.Context, teamID pgtype.UUI
 			&i.CompetitionID,
 			&i.CompetitionSlug,
 			&i.CompetitionName,
+			&i.CompetitionSort,
+			&i.Round,
+			&i.Phase,
 		); err != nil {
 			return nil, err
 		}

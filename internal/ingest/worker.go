@@ -83,6 +83,8 @@ func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetition
 		_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
 			FlashscoreID:   m.FlashscoreID,
 			CompetitionID:  c.ID,
+			Round:          optText(m.Round),
+			Phase:          optText(m.Phase),
 			Season:         int16(m.Season),
 			HomeTeamID:     homeID,
 			AwayTeamID:     awayID,

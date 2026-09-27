@@ -110,10 +110,12 @@ func (q *Queries) UpdateMatchLive(ctx context.Context, arg UpdateMatchLiveParams
 }
 
 const upsertMatch = `-- name: UpsertMatch :one
-INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, data_as_of, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())
+INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, round, phase, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET status = EXCLUDED.status,
+    round = EXCLUDED.round,
+    phase = EXCLUDED.phase,
     season = EXCLUDED.season,
     stage = EXCLUDED.stage,
     stage_started_at = EXCLUDED.stage_started_at,
@@ -137,6 +139,8 @@ type UpsertMatchParams struct {
 	AwayScore      pgtype.Int2
 	Stage          pgtype.Int2
 	StageStartedAt pgtype.Timestamptz
+	Round          pgtype.Text
+	Phase          pgtype.Text
 }
 
 func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtype.UUID, error) {
@@ -152,6 +156,8 @@ func (q *Queries) UpsertMatch(ctx context.Context, arg UpsertMatchParams) (pgtyp
 		arg.AwayScore,
 		arg.Stage,
 		arg.StageStartedAt,
+		arg.Round,
+		arg.Phase,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

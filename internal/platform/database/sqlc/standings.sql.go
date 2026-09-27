@@ -12,19 +12,20 @@ import (
 )
 
 const getCompetition = `-- name: GetCompetition :one
-SELECT c.id, c.slug, c.name, c.country, c.type,
+SELECT c.id, c.slug, c.name, c.country, c.country_slug, c.type,
        coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 WHERE c.slug = $1
 `
 
 type GetCompetitionRow struct {
-	ID      pgtype.UUID
-	Slug    string
-	Name    string
-	Country string
-	Type    string
-	Season  int16
+	ID          pgtype.UUID
+	Slug        string
+	Name        string
+	Country     string
+	CountrySlug string
+	Type        string
+	Season      int16
 }
 
 func (q *Queries) GetCompetition(ctx context.Context, slug string) (GetCompetitionRow, error) {
@@ -35,6 +36,7 @@ func (q *Queries) GetCompetition(ctx context.Context, slug string) (GetCompetiti
 		&i.Slug,
 		&i.Name,
 		&i.Country,
+		&i.CountrySlug,
 		&i.Type,
 		&i.Season,
 	)
@@ -53,7 +55,7 @@ func (q *Queries) LatestSeason(ctx context.Context) (int16, error) {
 }
 
 const listCompetitions = `-- name: ListCompetitions :many
-SELECT c.id, c.slug, c.name, c.country, c.type,
+SELECT c.id, c.slug, c.name, c.country, c.country_slug, c.type,
        coalesce((SELECT max(season) FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 WHERE c.active
@@ -61,12 +63,13 @@ ORDER BY c.sort_order
 `
 
 type ListCompetitionsRow struct {
-	ID      pgtype.UUID
-	Slug    string
-	Name    string
-	Country string
-	Type    string
-	Season  int16
+	ID          pgtype.UUID
+	Slug        string
+	Name        string
+	Country     string
+	CountrySlug string
+	Type        string
+	Season      int16
 }
 
 // Each competition with its latest season (0 until the ingestor has stored a match).
@@ -84,6 +87,7 @@ func (q *Queries) ListCompetitions(ctx context.Context) ([]ListCompetitionsRow, 
 			&i.Slug,
 			&i.Name,
 			&i.Country,
+			&i.CountrySlug,
 			&i.Type,
 			&i.Season,
 		); err != nil {
@@ -97,18 +101,55 @@ func (q *Queries) ListCompetitions(ctx context.Context) ([]ListCompetitionsRow, 
 	return items, nil
 }
 
+const listGroupPairings = `-- name: ListGroupPairings :many
+SELECT DISTINCT home_team_id, away_team_id
+FROM matches
+WHERE competition_id = $1::uuid AND season = $2::smallint AND phase IS NULL
+`
+
+type ListGroupPairingsParams struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+}
+
+type ListGroupPairingsRow struct {
+	HomeTeamID pgtype.UUID
+	AwayTeamID pgtype.UUID
+}
+
+// Who met whom in the group stage; a cup's groups are the connected components.
+func (q *Queries) ListGroupPairings(ctx context.Context, arg ListGroupPairingsParams) ([]ListGroupPairingsRow, error) {
+	rows, err := q.db.Query(ctx, listGroupPairings, arg.CompetitionID, arg.Season)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupPairingsRow
+	for rows.Next() {
+		var i ListGroupPairingsRow
+		if err := rows.Scan(&i.HomeTeamID, &i.AwayTeamID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStandings = `-- name: ListStandings :many
 WITH season_teams AS (
-    SELECT home_team_id AS team_id FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint
+    SELECT home_team_id AS team_id FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND phase IS NULL
     UNION
-    SELECT away_team_id FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint
+    SELECT away_team_id FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND phase IS NULL
 ),
 results AS (
     SELECT home_team_id AS team_id, home_score AS gf, away_score AS ga, match_time
-    FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND status = 'finished'
+    FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND phase IS NULL AND status = 'finished'
     UNION ALL
     SELECT away_team_id, away_score, home_score, match_time
-    FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND status = 'finished'
+    FROM matches WHERE competition_id = $1::uuid AND season = $2::smallint AND phase IS NULL AND status = 'finished'
 ),
 totals AS (
     SELECT st.team_id,

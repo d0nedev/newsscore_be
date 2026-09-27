@@ -19,6 +19,7 @@ type Competition struct {
 	FlashscorePath string
 	Active         bool
 	SortOrder      int16
+	CountrySlug    string
 }
 
 type Match struct {
@@ -36,6 +37,8 @@ type Match struct {
 	Stage          pgtype.Int2
 	StageStartedAt pgtype.Timestamptz
 	CompetitionID  pgtype.UUID
+	Round          pgtype.Text
+	Phase          pgtype.Text
 }
 
 type MatchEvent struct {
@@ -80,6 +83,9 @@ type MatchRow struct {
 	CompetitionID   pgtype.UUID
 	CompetitionSlug string
 	CompetitionName string
+	CompetitionSort int16
+	Round           pgtype.Text
+	Phase           pgtype.Text
 }
 
 type MatchStatistic struct {

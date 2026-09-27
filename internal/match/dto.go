@@ -17,8 +17,12 @@ import (
 
 var validStatuses = map[string]bool{"scheduled": true, "live": true, "finished": true}
 
+// maxRangeDays bounds from..to so one request cannot pull a whole season.
+const maxRangeDays = 31
+
 type listFilter struct {
 	From   time.Time
+	To     time.Time // exclusive
 	TeamID *uuid.UUID
 	Status string
 	League string // competition slug
@@ -27,16 +31,41 @@ type listFilter struct {
 func parseListFilter(q url.Values) (listFilter, error) {
 	var f listFilter
 
-	date := q.Get("date")
-	if date == "" {
+	// One day (date, default today) or an inclusive range (from, to), all in WIB.
+	day := func(name string) (time.Time, error) {
+		t, err := time.ParseInLocation(domain.DateLayout, q.Get(name), domain.WIB)
+		if err != nil {
+			return t, apperror.Validation(name + " must be DD.MM.YYYY")
+		}
+		return t, nil
+	}
+	switch {
+	case q.Get("from") != "" || q.Get("to") != "":
+		if q.Get("date") != "" {
+			return f, apperror.Validation("use either date or from/to")
+		}
+		from, err := day("from")
+		if err != nil {
+			return f, err
+		}
+		to, err := day("to")
+		if err != nil {
+			return f, err
+		}
+		if to.Before(from) || to.Sub(from) >= maxRangeDays*24*time.Hour {
+			return f, apperror.Validation("to must be on or after from, at most 31 days apart")
+		}
+		f.From, f.To = from, to.AddDate(0, 0, 1)
+	case q.Get("date") != "":
+		from, err := day("date")
+		if err != nil {
+			return f, err
+		}
+		f.From, f.To = from, from.AddDate(0, 0, 1)
+	default:
 		now := time.Now().In(domain.WIB)
 		f.From = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, domain.WIB)
-	} else {
-		from, err := time.ParseInLocation(domain.DateLayout, date, domain.WIB)
-		if err != nil {
-			return f, apperror.Validation("date must be DD.MM.YYYY")
-		}
-		f.From = from
+		f.To = f.From.AddDate(0, 0, 1)
 	}
 
 	if v := q.Get("teamId"); v != "" {
@@ -70,6 +99,7 @@ type MatchResponse struct {
 	ID       string       `json:"id"`
 	LeagueID string       `json:"leagueId"` // competition slug
 	League   string       `json:"league"`
+	Round    string       `json:"round,omitempty"`
 	Status   string       `json:"status"`
 	Time     string       `json:"time"`
 	Date     string       `json:"date"`
@@ -122,6 +152,7 @@ func ToMatchResponse(m db.MatchRow) MatchResponse {
 		ID:       m.ID.String(),
 		LeagueID: m.CompetitionSlug,
 		League:   m.CompetitionName,
+		Round:    m.Round.String,
 		Status:   m.Status,
 		Time:     kickoff.Format("15:04"),
 		Date:     kickoff.Format(domain.DateLayout),

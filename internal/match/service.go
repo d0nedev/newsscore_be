@@ -35,7 +35,7 @@ func (s *Service) List(ctx context.Context, f listFilter) ([]db.MatchRow, error)
 
 	params := db.ListMatchesParams{
 		FromTime:    pgtype.Timestamptz{Time: f.From, Valid: true},
-		ToTime:      pgtype.Timestamptz{Time: f.From.AddDate(0, 0, 1), Valid: true},
+		ToTime:      pgtype.Timestamptz{Time: f.To, Valid: true},
 		Status:      pgtype.Text{String: f.Status, Valid: f.Status != ""},
 		Competition: pgtype.Text{String: f.League, Valid: f.League != ""},
 	}

@@ -66,12 +66,19 @@ func ScrapeLeague(path string) ([]domain.Match, []domain.Team, error) {
 			return nil, nil, fmt.Errorf("initialFeeds['%s'] not found", name)
 		}
 
+		phase := ""
 		for _, m := range parseRecords(found[1]) {
+			// A "ZA" record opens a section, e.g. "INDONESIA: President Cup - Play Offs".
+			if header, ok := m["ZA"]; ok {
+				phase = sectionPhase(header)
+				continue
+			}
 			match, home, away, ok := parseMatch(m)
 			if !ok {
 				continue
 			}
 			match.Season = season
+			match.Phase = phase
 			teamsMap[home.FlashscoreID] = home
 			teamsMap[away.FlashscoreID] = away
 			matches = append(matches, match)
@@ -119,8 +126,17 @@ func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bo
 		HomeScore:            homeScore,
 		AwayScore:            awayScore,
 		Stage:                stage,
+		Round:                m["ER"],
 		StageStartedAt:       unix(m["AO"]),
 	}, home, away, true
+}
+
+// sectionPhase returns what follows " - " in a section header, or "" for the main stage.
+func sectionPhase(header string) string {
+	if _, phase, ok := strings.Cut(header, " - "); ok {
+		return phase
+	}
+	return ""
 }
 
 // status maps Flashscore's AB/DA code: 1 scheduled, 2 live, 3 finished.
