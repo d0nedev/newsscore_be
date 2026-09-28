@@ -112,7 +112,8 @@ func TestSeasonPattern(t *testing.T) {
 // A team page quotes feed names with " and lists each match under its competition.
 func TestParseFeedsTeamPage(t *testing.T) {
 	section := "ZA÷ASIA: ASEAN Championship¬ZK÷ASEAN Championship¬ZL÷/football/asia/asean-championship/¬ZY÷Asia¬~"
-	match := "AA÷0hBlRgoL¬AD÷1790341200¬AB÷3¬PX÷88ErHiT9¬AE÷Indonesia¬WU÷indonesia¬AG÷2¬PY÷G0dqs0hU¬AF÷Singapore¬WV÷singapore¬AH÷0¬~"
+	// AM is a match note; LaLiga's hold newlines.
+	match := "AA÷0hBlRgoL¬AD÷1790341200¬AB÷3¬PX÷88ErHiT9¬AE÷Indonesia¬WU÷indonesia¬AG÷2¬PY÷G0dqs0hU¬AF÷Singapore¬WV÷singapore¬AH÷0¬AM÷Playing home matches at a different stadium\n- Estadio.¬~"
 	html := `cjs.initialFeeds["fixtures"] = { data: ` + "``" + ` };` +
 		`cjs.initialFeeds["results"] = { data: ` + "`" + section + match + "`" + ` };`
 
@@ -154,5 +155,18 @@ func TestParseSquad(t *testing.T) {
 	}
 	if p := players[1]; p.Position != "FW" || p.ShirtNumber != 0 || p.FlashscoreID != "vRktJf5L" {
 		t.Errorf("forward = %+v", p)
+	}
+}
+
+func TestSectionPhase(t *testing.T) {
+	for header, want := range map[string]string{
+		"INDONESIA: Super League":                  "",
+		"INDONESIA: President Cup - Play Offs":     "Play Offs",
+		"EUROPE: Champions League - League phase":  "",
+		"EUROPE: Champions League - Qualification": "Qualification",
+	} {
+		if got := sectionPhase(header); got != want {
+			t.Errorf("sectionPhase(%q) = %q, want %q", header, got, want)
+		}
 	}
 }

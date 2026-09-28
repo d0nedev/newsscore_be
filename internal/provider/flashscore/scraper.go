@@ -21,10 +21,11 @@ const baseURL = "https://www.flashscore.com"
 // The <title> is not reliable: the Super League page says "Super League Indonesia".
 var seasonPattern = regexp.MustCompile(`heading__info">(\d{4})(?:/\d{4})?<`)
 
-// League pages quote the feed names with ' and team pages with ".
+// League pages quote the feed names with ' and team pages with ". (?s): a
+// match note (AM) can hold a newline, e.g. "...different stadium\n- Estadio...".
 var feedPatterns = map[string]*regexp.Regexp{
-	"fixtures": regexp.MustCompile("cjs\\.initialFeeds\\[['\"]fixtures['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
-	"results":  regexp.MustCompile("cjs\\.initialFeeds\\[['\"]results['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
+	"fixtures": regexp.MustCompile("(?s)cjs\\.initialFeeds\\[['\"]fixtures['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
+	"results":  regexp.MustCompile("(?s)cjs\\.initialFeeds\\[['\"]results['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
 }
 
 // ScrapeLeague reads fixtures (scheduled and live) and results of one competition
@@ -213,9 +214,10 @@ func DownloadImage(url string) ([]byte, string, error) {
 	return body, ext, nil
 }
 
-// sectionPhase returns what follows " - " in a section header, or "" for the main stage.
+// sectionPhase returns what follows " - " in a section header, or "" for the
+// main stage. UEFA's "League phase" is the main stage: its table is the standings.
 func sectionPhase(header string) string {
-	if _, phase, ok := strings.Cut(header, " - "); ok {
+	if _, phase, ok := strings.Cut(header, " - "); ok && phase != "League phase" {
 		return phase
 	}
 	return ""

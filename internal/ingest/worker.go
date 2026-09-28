@@ -172,7 +172,7 @@ func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetition
 	return nil
 }
 
-// syncNationalTeams reads each national team page (Indonesia): its matches in
+// syncNationalTeams reads each flagged national team page (Indonesia): its matches in
 // every competition it plays, friendlies included. Only these matches are
 // stored, not the rest of those competitions.
 func (w *Worker) syncNationalTeams(ctx context.Context) error {

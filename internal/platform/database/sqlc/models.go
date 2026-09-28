@@ -23,10 +23,11 @@ type Competition struct {
 }
 
 type Country struct {
-	ID        pgtype.UUID
-	Slug      string
-	Name      string
-	SortOrder int16
+	ID                 pgtype.UUID
+	Slug               string
+	Name               string
+	SortOrder          int16
+	ScrapeNationalTeam bool
 }
 
 type Match struct {

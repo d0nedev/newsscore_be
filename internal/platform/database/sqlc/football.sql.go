@@ -85,7 +85,7 @@ const listNationalTeamsToScrape = `-- name: ListNationalTeamsToScrape :many
 SELECT t.flashscore_id, n.slug AS country_slug
 FROM teams t
 JOIN countries n ON n.id = t.country_id
-WHERE EXISTS (SELECT 1 FROM competitions c WHERE c.country_id = n.id AND c.active AND c.scraped)
+WHERE n.scrape_national_team
 `
 
 type ListNationalTeamsToScrapeRow struct {
@@ -93,7 +93,7 @@ type ListNationalTeamsToScrapeRow struct {
 	CountrySlug  string
 }
 
-// National teams of countries with a scraped league, e.g. Indonesia.
+// National teams of flagged countries (Indonesia).
 func (q *Queries) ListNationalTeamsToScrape(ctx context.Context) ([]ListNationalTeamsToScrapeRow, error) {
 	rows, err := q.db.Query(ctx, listNationalTeamsToScrape)
 	if err != nil {
@@ -123,8 +123,7 @@ WHERE t.flashscore_slug IS NOT NULL
       THEN EXISTS (
           SELECT 1 FROM matches m JOIN competitions c ON c.id = m.competition_id
           WHERE c.active AND c.scraped AND t.id IN (m.home_team_id, m.away_team_id))
-      ELSE EXISTS (
-          SELECT 1 FROM competitions c WHERE c.country_id = t.country_id AND c.active AND c.scraped)
+      ELSE (SELECT scrape_national_team FROM countries WHERE id = t.country_id)
       END
 ORDER BY t.squad_synced_at NULLS FIRST
 LIMIT $1
@@ -136,8 +135,8 @@ type ListSquadsToSyncRow struct {
 	FlashscoreSlug string
 }
 
-// Clubs playing a scraped competition, and national teams of countries with
-// one (Indonesia), whose squad was not read in the last day, oldest first.
+// Clubs playing a scraped competition, and national teams of flagged
+// countries (Indonesia), whose squad was not read in the last day, oldest first.
 func (q *Queries) ListSquadsToSync(ctx context.Context, limit int32) ([]ListSquadsToSyncRow, error) {
 	rows, err := q.db.Query(ctx, listSquadsToSync, limit)
 	if err != nil {

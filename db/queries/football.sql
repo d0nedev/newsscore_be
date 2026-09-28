@@ -48,11 +48,11 @@ WHERE id = $1;
 SELECT id, slug, flashscore_path FROM competitions WHERE active AND scraped ORDER BY sort_order;
 
 -- name: ListNationalTeamsToScrape :many
--- National teams of countries with a scraped league, e.g. Indonesia.
+-- National teams of flagged countries (Indonesia).
 SELECT t.flashscore_id, n.slug AS country_slug
 FROM teams t
 JOIN countries n ON n.id = t.country_id
-WHERE EXISTS (SELECT 1 FROM competitions c WHERE c.country_id = n.id AND c.active AND c.scraped);
+WHERE n.scrape_national_team;
 
 -- name: UpsertCountry :one
 INSERT INTO countries (slug, name) VALUES ($1, $2)
@@ -75,8 +75,8 @@ WHERE logo_url IS NULL AND logo_source_url IS NOT NULL;
 UPDATE teams SET logo_url = $2 WHERE id = $1;
 
 -- name: ListSquadsToSync :many
--- Clubs playing a scraped competition, and national teams of countries with
--- one (Indonesia), whose squad was not read in the last day, oldest first.
+-- Clubs playing a scraped competition, and national teams of flagged
+-- countries (Indonesia), whose squad was not read in the last day, oldest first.
 SELECT t.id, t.flashscore_id, t.flashscore_slug::text AS flashscore_slug
 FROM teams t
 WHERE t.flashscore_slug IS NOT NULL
@@ -85,8 +85,7 @@ WHERE t.flashscore_slug IS NOT NULL
       THEN EXISTS (
           SELECT 1 FROM matches m JOIN competitions c ON c.id = m.competition_id
           WHERE c.active AND c.scraped AND t.id IN (m.home_team_id, m.away_team_id))
-      ELSE EXISTS (
-          SELECT 1 FROM competitions c WHERE c.country_id = t.country_id AND c.active AND c.scraped)
+      ELSE (SELECT scrape_national_team FROM countries WHERE id = t.country_id)
       END
 ORDER BY t.squad_synced_at NULLS FIRST
 LIMIT $1;
