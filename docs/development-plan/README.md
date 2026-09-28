@@ -32,6 +32,7 @@ Tiga sasaran yang menentukan hampir semua keputusan teknis di dokumen ini:
 | [`api-contract-plan.md`](api-contract-plan.md) | Kontrak API `/api/v1` (acuan utama bila bertentangan dengan 03) |
 | [`backend-handler-service.md`](backend-handler-service.md) | Aturan handler dan service |
 | [`postgres-schema-plan.md`](postgres-schema-plan.md) | Skema PostgreSQL |
+| [`ingestion-multi-provider-plan.md`](ingestion-multi-provider-plan.md) | Rencana ingestion Flashscore (Liga 1, Championship) + SofaScore (kompetisi Indonesia lainnya) |
 | [`../files/07-scraping-flashscore.md`](../files/07-scraping-flashscore.md) | Teknik scraping Flashscore |
 
 ## Ringkasan stack

@@ -7,3 +7,4 @@
 /deploy/backups/
 .claude/settings.local.json
 /docs/graphify-out/
+/scrap-claude/sofascore_spike/
