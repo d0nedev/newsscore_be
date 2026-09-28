@@ -14,7 +14,9 @@ import (
 const getCompetition = `-- name: GetCompetition :one
 SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
        coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
-                 FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
+                 FROM matches m WHERE m.competition_id = c.id),
+                 -- seeded tables (SofaScore) have no matches
+                 (SELECT max(season) FROM competition_standings cs WHERE cs.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 JOIN countries n ON n.id = c.country_id
 WHERE c.slug = $1
@@ -63,7 +65,9 @@ func (q *Queries) LatestSeason(ctx context.Context) (int16, error) {
 const listCompetitions = `-- name: ListCompetitions :many
 SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
        coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
-                 FROM matches m WHERE m.competition_id = c.id), 0)::smallint AS season
+                 FROM matches m WHERE m.competition_id = c.id),
+                 -- seeded tables (SofaScore) have no matches
+                 (SELECT max(season) FROM competition_standings cs WHERE cs.competition_id = c.id), 0)::smallint AS season
 FROM competitions c
 JOIN countries n ON n.id = c.country_id
 WHERE c.active

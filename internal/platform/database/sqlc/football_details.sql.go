@@ -35,7 +35,7 @@ func (q *Queries) GetMatchByFlashscoreID(ctx context.Context, flashscoreID strin
 }
 
 const listPlayersMissingPhoto = `-- name: ListPlayersMissingPhoto :many
-SELECT id, flashscore_id, photo_source_url::text AS photo_source_url
+SELECT id, flashscore_id::text AS flashscore_id, photo_source_url::text AS photo_source_url
 FROM players
 WHERE photo_url IS NULL AND photo_source_url IS NOT NULL
 LIMIT $1
@@ -187,7 +187,7 @@ RETURNING id
 `
 
 type UpsertPlayerParams struct {
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	TeamID         pgtype.UUID
 	Name           string
 	Nationality    pgtype.Text

@@ -12,7 +12,7 @@ import (
 )
 
 const listActiveCompetitions = `-- name: ListActiveCompetitions :many
-SELECT id, slug, flashscore_path FROM competitions WHERE active AND scraped ORDER BY sort_order
+SELECT id, slug, flashscore_path::text AS flashscore_path FROM competitions WHERE active AND scraped AND flashscore_path IS NOT NULL ORDER BY sort_order
 `
 
 type ListActiveCompetitionsRow struct {
@@ -82,10 +82,10 @@ func (q *Queries) ListLiveCandidates(ctx context.Context) ([]ListLiveCandidatesR
 }
 
 const listNationalTeamsToScrape = `-- name: ListNationalTeamsToScrape :many
-SELECT t.flashscore_id, n.slug AS country_slug
+SELECT t.flashscore_id::text AS flashscore_id, n.slug AS country_slug
 FROM teams t
 JOIN countries n ON n.id = t.country_id
-WHERE n.scrape_national_team
+WHERE n.scrape_national_team AND t.flashscore_id IS NOT NULL
 `
 
 type ListNationalTeamsToScrapeRow struct {
@@ -115,7 +115,7 @@ func (q *Queries) ListNationalTeamsToScrape(ctx context.Context) ([]ListNational
 }
 
 const listSquadsToSync = `-- name: ListSquadsToSync :many
-SELECT t.id, t.flashscore_id, t.flashscore_slug::text AS flashscore_slug
+SELECT t.id, t.flashscore_id::text AS flashscore_id, t.flashscore_slug::text AS flashscore_slug
 FROM teams t
 WHERE t.flashscore_slug IS NOT NULL
   AND (t.squad_synced_at IS NULL OR t.squad_synced_at < now() - interval '1 day')
@@ -158,7 +158,7 @@ func (q *Queries) ListSquadsToSync(ctx context.Context, limit int32) ([]ListSqua
 }
 
 const listTeamsMissingLogo = `-- name: ListTeamsMissingLogo :many
-SELECT id, flashscore_id, logo_source_url::text AS logo_source_url
+SELECT id, flashscore_id::text AS flashscore_id, logo_source_url::text AS logo_source_url
 FROM teams
 WHERE logo_url IS NULL AND logo_source_url IS NOT NULL
 `
@@ -327,7 +327,7 @@ SET team_id = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_i
 `
 
 type UpsertSquadPlayerParams struct {
-	FlashscoreID string
+	FlashscoreID pgtype.Text
 	TeamID       pgtype.UUID
 	Name         string
 	Nationality  pgtype.Text
@@ -367,7 +367,7 @@ RETURNING id
 `
 
 type UpsertTeamParams struct {
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	Name           string
 	ShortName      string
 	LogoSourceUrl  pgtype.Text
@@ -400,7 +400,7 @@ type UpsertTeamPageCompetitionParams struct {
 	Slug           string
 	Name           string
 	CountryID      pgtype.UUID
-	FlashscorePath string
+	FlashscorePath pgtype.Text
 }
 
 // A competition seen on a national team's page; see migration 0020.

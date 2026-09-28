@@ -15,11 +15,28 @@ type Competition struct {
 	Slug           string
 	Name           string
 	Type           string
-	FlashscorePath string
+	FlashscorePath pgtype.Text
 	Active         bool
 	SortOrder      int16
 	CountryID      pgtype.UUID
 	Scraped        bool
+	SofascoreID    pgtype.Int4
+}
+
+type CompetitionStanding struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+	GroupName     string
+	GroupOrder    int16
+	Position      int16
+	TeamID        pgtype.UUID
+	Played        int16
+	Won           int16
+	Drawn         int16
+	Lost          int16
+	GoalsFor      int16
+	GoalsAgainst  int16
+	Points        int16
 }
 
 type Country struct {
@@ -138,7 +155,7 @@ type NewsLink struct {
 
 type Player struct {
 	ID             pgtype.UUID
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	TeamID         pgtype.UUID
 	Name           string
 	AvatarUrl      pgtype.Text
@@ -148,6 +165,9 @@ type Player struct {
 	ShirtNumber    pgtype.Int2
 	PhotoSourceUrl pgtype.Text
 	PhotoUrl       pgtype.Text
+	SofascoreID    pgtype.Int4
+	BirthDate      pgtype.Date
+	HeightCm       pgtype.Int2
 }
 
 type Session struct {
@@ -161,7 +181,7 @@ type Session struct {
 
 type Team struct {
 	ID             pgtype.UUID
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	Name           string
 	ShortName      string
 	LogoUrl        pgtype.Text
@@ -170,6 +190,7 @@ type Team struct {
 	CountryID      pgtype.UUID
 	FlashscoreSlug pgtype.Text
 	SquadSyncedAt  pgtype.Timestamptz
+	SofascoreID    pgtype.Int4
 }
 
 type User struct {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/d0nedev/newsscore/internal/platform/apperror"
 	"github.com/d0nedev/newsscore/internal/platform/database"
@@ -46,7 +47,8 @@ func (s *Service) List(ctx context.Context) ([]db.ListCompetitionsRow, error) {
 type table struct {
 	Competition db.GetCompetitionRow
 	Rows        []db.ListStandingsRow
-	Pairings    []db.ListGroupPairingsRow // cups only
+	Pairings    []db.ListGroupPairingsRow    // cups only
+	Snapshot    []db.ListStandingSnapshotRow // tables seeded as seen (SofaScore), for competitions without our own matches
 }
 
 // Get returns a competition and its table for season; season 0 means its latest season.
@@ -70,6 +72,12 @@ func (s *Service) Get(ctx context.Context, slug string, season int16) (table, er
 	}
 
 	t := table{Competition: c}
+	if !c.Scraped {
+		if t.Snapshot, err = s.queries.ListStandingSnapshot(ctx, db.ListStandingSnapshotParams{CompetitionID: c.ID, Season: c.Season}); err != nil {
+			return fail("failed to list standings", err)
+		}
+		return t, nil
+	}
 	if t.Rows, err = s.queries.ListStandings(ctx, db.ListStandingsParams{CompetitionID: c.ID, Season: c.Season}); err != nil {
 		return fail("failed to compute standings", err)
 	}
@@ -190,8 +198,9 @@ func withTable(t table) League {
 	standings := []Row{}
 	out := League{ID: c.Slug, Name: c.Name, Country: c.Country, CountryID: c.CountrySlug, Type: c.Type, Season: int(c.Season), Standings: &standings}
 	if !c.Scraped {
-		// Only our national team's matches are stored: a table would be wrong.
-		return out
+		// A seeded table, or none: a national team page holds only our team's
+		// matches, so a table computed from them would be wrong.
+		return withSnapshot(out, t.Snapshot)
 	}
 	if c.Type == "league" {
 		standings = toRows(t.Rows)
@@ -200,6 +209,33 @@ func withTable(t table) League {
 		out.Groups = &groups
 	}
 	return out
+}
+
+// withSnapshot renders a seeded table: one table, or one per group ("Group A" -> "Grup A").
+func withSnapshot(out League, rows []db.ListStandingSnapshotRow) League {
+	var groups []Group
+	for _, r := range rows {
+		if len(groups) == 0 || groups[len(groups)-1].Name != groupName(r.GroupName) {
+			groups = append(groups, Group{Name: groupName(r.GroupName), Standings: []Row{}})
+		}
+		g := &groups[len(groups)-1]
+		g.Standings = append(g.Standings, Row{
+			Position: int(r.Position), TeamID: r.ID.String(), Team: r.Name, Badge: r.ShortName, Logo: r.LogoUrl.String,
+			Played: int32(r.Played), Won: int32(r.Won), Drawn: int32(r.Drawn), Lost: int32(r.Lost),
+			GoalsFor: int32(r.GoalsFor), GoalsAgainst: int32(r.GoalsAgainst), Points: int32(r.Points), Form: []string{},
+		})
+	}
+	switch {
+	case len(groups) == 1 && groups[0].Name == "":
+		*out.Standings = groups[0].Standings
+	case len(groups) > 0:
+		out.Groups = &groups
+	}
+	return out
+}
+
+func groupName(s string) string {
+	return strings.Replace(s, "Group ", "Grup ", 1)
 }
 
 func toRows(rows []db.ListStandingsRow) []Row {

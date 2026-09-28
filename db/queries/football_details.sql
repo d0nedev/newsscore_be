@@ -48,7 +48,7 @@ SET stats = EXCLUDED.stats,
 SELECT id, flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1;
 
 -- name: ListPlayersMissingPhoto :many
-SELECT id, flashscore_id, photo_source_url::text AS photo_source_url
+SELECT id, flashscore_id::text AS flashscore_id, photo_source_url::text AS photo_source_url
 FROM players
 WHERE photo_url IS NULL AND photo_source_url IS NOT NULL
 LIMIT $1;

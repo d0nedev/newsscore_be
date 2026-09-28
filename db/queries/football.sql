@@ -45,14 +45,14 @@ SET status = $2, stage = $3, stage_started_at = $4, home_score = $5, away_score 
 WHERE id = $1;
 
 -- name: ListActiveCompetitions :many
-SELECT id, slug, flashscore_path FROM competitions WHERE active AND scraped ORDER BY sort_order;
+SELECT id, slug, flashscore_path::text AS flashscore_path FROM competitions WHERE active AND scraped AND flashscore_path IS NOT NULL ORDER BY sort_order;
 
 -- name: ListNationalTeamsToScrape :many
 -- National teams of flagged countries (Indonesia).
-SELECT t.flashscore_id, n.slug AS country_slug
+SELECT t.flashscore_id::text AS flashscore_id, n.slug AS country_slug
 FROM teams t
 JOIN countries n ON n.id = t.country_id
-WHERE n.scrape_national_team;
+WHERE n.scrape_national_team AND t.flashscore_id IS NOT NULL;
 
 -- name: UpsertCountry :one
 INSERT INTO countries (slug, name) VALUES ($1, $2)
@@ -67,7 +67,7 @@ ON CONFLICT (flashscore_path) DO UPDATE SET name = EXCLUDED.name
 RETURNING id;
 
 -- name: ListTeamsMissingLogo :many
-SELECT id, flashscore_id, logo_source_url::text AS logo_source_url
+SELECT id, flashscore_id::text AS flashscore_id, logo_source_url::text AS logo_source_url
 FROM teams
 WHERE logo_url IS NULL AND logo_source_url IS NOT NULL;
 
@@ -77,7 +77,7 @@ UPDATE teams SET logo_url = $2 WHERE id = $1;
 -- name: ListSquadsToSync :many
 -- Clubs playing a scraped competition, and national teams of flagged
 -- countries (Indonesia), whose squad was not read in the last day, oldest first.
-SELECT t.id, t.flashscore_id, t.flashscore_slug::text AS flashscore_slug
+SELECT t.id, t.flashscore_id::text AS flashscore_id, t.flashscore_slug::text AS flashscore_slug
 FROM teams t
 WHERE t.flashscore_slug IS NOT NULL
   AND (t.squad_synced_at IS NULL OR t.squad_synced_at < now() - interval '1 day')

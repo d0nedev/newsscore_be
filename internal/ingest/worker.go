@@ -228,7 +228,7 @@ func (w *Worker) upsertTeamPageCompetition(ctx context.Context, c domain.Competi
 		Slug:           path.Base(c.Path), // "/football/asia/asean-championship/" -> "asean-championship"
 		Name:           c.Name,
 		CountryID:      region,
-		FlashscorePath: c.Path,
+		FlashscorePath: optText(c.Path),
 	})
 }
 
@@ -249,7 +249,7 @@ func (w *Worker) upsertTeams(ctx context.Context, teams []domain.Team, national 
 			}
 		}
 		id, err := w.db.UpsertTeam(ctx, db.UpsertTeamParams{
-			FlashscoreID:   t.FlashscoreID,
+			FlashscoreID:   optText(t.FlashscoreID),
 			Name:           t.Name,
 			ShortName:      t.ShortName,
 			LogoSourceUrl:  optText(t.LogoURL),
@@ -320,7 +320,7 @@ func (w *Worker) syncSquads(ctx context.Context) error {
 		}
 		for _, p := range players {
 			if err := w.db.UpsertSquadPlayer(ctx, db.UpsertSquadPlayerParams{
-				FlashscoreID: p.FlashscoreID,
+				FlashscoreID: optText(p.FlashscoreID),
 				TeamID:       t.ID,
 				Name:         p.Name,
 				Nationality:  optText(p.Nationality),
@@ -366,7 +366,7 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscore
 		team := sideTeam(p.Team, m.HomeTeamID, m.AwayTeamID)
 
 		playerID, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
-			FlashscoreID:   p.FlashscoreID,
+			FlashscoreID:   optText(p.FlashscoreID),
 			TeamID:         team,
 			Name:           p.Name,
 			Nationality:    optText(p.Nationality),
