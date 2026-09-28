@@ -1,6 +1,17 @@
+# app and ingestor restart on crash and reboot; logs stay in Docker's json-file,
+# rotated at 5 x 20 MB per service: docker compose logs -f ingestor
+x-restart-logging: &restart-logging
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
+
 services:
   postgres:
     image: postgres:17.6-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -28,6 +39,7 @@ services:
         condition: service_healthy
 
   app:
+    <<: *restart-logging
     build: .
     ports:
       - "8080:8080"
@@ -60,6 +72,7 @@ services:
         condition: service_started
 
   ingestor:
+    <<: *restart-logging
     build: .
     entrypoint: ["/ingestor"]
     volumes:

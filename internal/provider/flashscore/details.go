@@ -45,8 +45,8 @@ func fetchBody(feedType, matchID string) (string, error) {
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("unexpected status %d", res.StatusCode)
+	if err := checkStatus(res.StatusCode); err != nil {
+		return "", err
 	}
 
 	body, err := io.ReadAll(res.Body)

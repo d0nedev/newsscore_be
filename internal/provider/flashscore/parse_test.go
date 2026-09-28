@@ -1,6 +1,7 @@
 package flashscore
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -168,5 +169,19 @@ func TestSectionPhase(t *testing.T) {
 		if got := sectionPhase(header); got != want {
 			t.Errorf("sectionPhase(%q) = %q, want %q", header, got, want)
 		}
+	}
+}
+
+func TestCheckStatus(t *testing.T) {
+	if err := checkStatus(200); err != nil {
+		t.Errorf("200: %v", err)
+	}
+	for _, code := range []int{403, 429} {
+		if err := checkStatus(code); !errors.Is(err, ErrBlocked) {
+			t.Errorf("%d: %v, want ErrBlocked", code, err)
+		}
+	}
+	if err := checkStatus(500); err == nil || errors.Is(err, ErrBlocked) {
+		t.Errorf("500: %v, want a plain error", err)
 	}
 }

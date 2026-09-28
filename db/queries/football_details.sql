@@ -44,14 +44,8 @@ ON CONFLICT (match_id) DO UPDATE
 SET stats = EXCLUDED.stats,
     updated_at = now();
 
--- name: ListMatchesMissingDetails :many
--- Newest finished matches first, so a stubborn old match cannot block fresh ones.
-SELECT m.id, m.flashscore_id, m.home_team_id, m.away_team_id
-FROM matches m
-WHERE m.status = 'finished'
-  AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
-ORDER BY m.match_time DESC
-LIMIT $1;
+-- name: GetMatchByFlashscoreID :one
+SELECT id, flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1;
 
 -- name: ListPlayersMissingPhoto :many
 SELECT id, flashscore_id, photo_source_url::text AS photo_source_url

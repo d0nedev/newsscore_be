@@ -30,6 +30,19 @@ type Country struct {
 	ScrapeNationalTeam bool
 }
 
+type IngestJob struct {
+	ID        int64
+	Kind      string
+	Target    string
+	Status    string
+	Attempts  int16
+	LastError pgtype.Text
+	NotBefore pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	DoneAt    pgtype.Timestamptz
+}
+
 type Match struct {
 	ID             pgtype.UUID
 	FlashscoreID   string

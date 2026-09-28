@@ -62,7 +62,7 @@ func (w *Worker) Sync(ctx context.Context) error {
 	if err := w.syncImages(ctx); err != nil {
 		w.logger.Error("sync images failed", slog.Any("error", err))
 	}
-	return w.syncDetails(ctx)
+	return w.runJobs(ctx)
 }
 
 // photosPerRun caps player photo downloads per league sync (one per second);
@@ -167,6 +167,9 @@ func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetition
 
 	teamIDs := w.upsertTeams(ctx, teams, false)
 	for _, m := range matches {
+		if ctx.Err() != nil {
+			return ctx.Err() // shutting down: one line in the log, not one per match
+		}
 		w.upsertMatch(ctx, m, c.ID, teamIDs)
 	}
 	return nil
@@ -199,6 +202,9 @@ func (w *Worker) syncNationalTeams(ctx context.Context) error {
 		teamIDs := w.upsertTeams(ctx, teams, true)
 		competitions := make(map[string]pgtype.UUID)
 		for _, m := range matches {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			id, ok := competitions[m.Competition.Path]
 			if !ok {
 				if id, err = w.upsertTeamPageCompetition(ctx, m.Competition); err != nil {
@@ -231,6 +237,9 @@ func (w *Worker) upsertTeamPageCompetition(ctx context.Context, c domain.Competi
 func (w *Worker) upsertTeams(ctx context.Context, teams []domain.Team, national bool) map[string]pgtype.UUID {
 	ids := make(map[string]pgtype.UUID, len(teams))
 	for _, t := range teams {
+		if ctx.Err() != nil {
+			break
+		}
 		var country pgtype.UUID
 		if national {
 			var err error
@@ -341,30 +350,7 @@ type statJSON struct {
 	Away  string `json:"away"`
 }
 
-func (w *Worker) syncDetails(ctx context.Context) error {
-	if w.detailsPerRun == 0 {
-		return nil
-	}
-
-	pending, err := w.db.ListMatchesMissingDetails(ctx, int32(w.detailsPerRun))
-	if err != nil {
-		return fmt.Errorf("list matches missing details: %w", err)
-	}
-
-	for _, m := range pending {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if err := w.syncMatchDetails(ctx, m); err != nil {
-			// ponytail: a match Flashscore never serves details for is retried every run; add an attempts column if that shows up in logs.
-			w.logger.Error("sync match details failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
-		}
-	}
-
-	return nil
-}
-
-func (w *Worker) syncMatchDetails(ctx context.Context, m db.ListMatchesMissingDetailsRow) error {
+func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscoreIDRow) error {
 	events, stats, players, err := flashscore.ScrapeMatchDetails(m.FlashscoreID)
 	if err != nil {
 		return err

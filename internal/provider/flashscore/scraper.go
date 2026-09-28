@@ -1,6 +1,7 @@
 package flashscore
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,8 +79,8 @@ func fetchPage(path string) (string, error) {
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status %d", res.StatusCode)
+	if err := checkStatus(res.StatusCode); err != nil {
+		return "", err
 	}
 
 	body, err := io.ReadAll(res.Body)
@@ -87,6 +88,19 @@ func fetchPage(path string) (string, error) {
 		return "", err
 	}
 	return string(body), nil
+}
+
+// ErrBlocked means Flashscore refused us (403 or 429): back off, do not retry at once.
+var ErrBlocked = errors.New("blocked by flashscore")
+
+func checkStatus(code int) error {
+	switch code {
+	case http.StatusOK:
+		return nil
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		return fmt.Errorf("%w: status %d", ErrBlocked, code)
+	}
+	return fmt.Errorf("unexpected status %d", code)
 }
 
 // parseFeeds reads the fixtures and results feeds embedded in a page.
