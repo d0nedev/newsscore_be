@@ -20,7 +20,7 @@ const baseURL = "https://www.flashscore.com"
 
 // seasonPattern reads the season from the page heading, "2026/2027" or "2026".
 // The <title> is not reliable: the Super League page says "Super League Indonesia".
-var seasonPattern = regexp.MustCompile(`heading__info">(\d{4})(?:/\d{4})?<`)
+var seasonPattern = regexp.MustCompile(`heading__info">(\d{4})(/\d{4})?<`)
 
 // League pages quote the feed names with ' and team pages with ". (?s): a
 // match note (AM) can hold a newline, e.g. "...different stadium\n- Estadio...".
@@ -31,23 +31,35 @@ var feedPatterns = map[string]*regexp.Regexp{
 
 // ScrapeLeague reads fixtures (scheduled and live) and results of one competition
 // page, e.g. path "/football/indonesia/super-league/", from one page load.
-func ScrapeLeague(path string) ([]domain.Match, []domain.Team, error) {
+// split reports a season across two years ("2026/2027") rather than one ("2026").
+// Each feed holds at most 100 matches: team pages (ScrapeTeam) fill the rest.
+func ScrapeLeague(path string) (matches []domain.Match, teams []domain.Team, split bool, err error) {
 	html, err := fetchPage(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	found := seasonPattern.FindStringSubmatch(html)
 	if len(found) < 2 {
-		return nil, nil, fmt.Errorf("season not found in page heading")
+		return nil, nil, false, fmt.Errorf("season not found in page heading")
 	}
 	season, _ := strconv.Atoi(found[1])
 
-	matches, teams, err := parseFeeds(html)
+	matches, teams, err = parseFeeds(html)
 	for i := range matches {
 		matches[i].Season = season
 	}
-	return matches, teams, err
+	return matches, teams, found[2] != "", err
+}
+
+// SeasonOf names the season a match on t belongs to, as Flashscore does: the
+// year for a one-year season, the starting year for a split one (July to June).
+func SeasonOf(t time.Time, split bool) int {
+	t = t.In(domain.WIB)
+	if split && t.Month() < time.July {
+		return t.Year() - 1
+	}
+	return t.Year()
 }
 
 // ScrapeTeam reads a team's recent results and fixtures across all its

@@ -185,3 +185,31 @@ func TestCheckStatus(t *testing.T) {
 		t.Errorf("500: %v, want a plain error", err)
 	}
 }
+
+func TestSeasonOf(t *testing.T) {
+	for _, c := range []struct {
+		date  string
+		split bool
+		want  int
+	}{
+		{"2026-08-22", true, 2026}, // Premier League 2026/2027 kick-off
+		{"2027-01-16", true, 2026}, // same season after New Year
+		{"2027-05-23", true, 2026},
+		{"2026-02-21", false, 2026}, // MLS 2026
+		{"2025-10-12", false, 2025}, // MLS 2025, still on a team's results page
+	} {
+		d, _ := time.ParseInLocation("2006-01-02", c.date, time.UTC)
+		if got := SeasonOf(d.Add(12*time.Hour), c.split); got != c.want {
+			t.Errorf("SeasonOf(%s, split=%v) = %d, want %d", c.date, c.split, got, c.want)
+		}
+	}
+}
+
+func TestSeasonPatternSplit(t *testing.T) {
+	for heading, split := range map[string]bool{`heading__info">2026/2027<`: true, `heading__info">2026<`: false} {
+		m := seasonPattern.FindStringSubmatch(heading)
+		if len(m) < 3 || m[1] != "2026" || (m[2] != "") != split {
+			t.Errorf("%s: %q", heading, m)
+		}
+	}
+}

@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getTeamPage = `-- name: GetTeamPage :one
+SELECT id, flashscore_slug::text AS flashscore_slug FROM teams WHERE flashscore_id = $1 AND flashscore_slug IS NOT NULL
+`
+
+type GetTeamPageRow struct {
+	ID             pgtype.UUID
+	FlashscoreSlug string
+}
+
+func (q *Queries) GetTeamPage(ctx context.Context, flashscoreID pgtype.Text) (GetTeamPageRow, error) {
+	row := q.db.QueryRow(ctx, getTeamPage, flashscoreID)
+	var i GetTeamPageRow
+	err := row.Scan(&i.ID, &i.FlashscoreSlug)
+	return i, err
+}
+
 const listActiveCompetitions = `-- name: ListActiveCompetitions :many
 SELECT id, slug, flashscore_path::text AS flashscore_path FROM competitions WHERE active AND scraped AND flashscore_path IS NOT NULL ORDER BY sort_order
 `
@@ -114,6 +130,39 @@ func (q *Queries) ListNationalTeamsToScrape(ctx context.Context) ([]ListNational
 	return items, nil
 }
 
+const listScrapedCompetitionPaths = `-- name: ListScrapedCompetitionPaths :many
+SELECT id, flashscore_path::text AS flashscore_path, split_season
+FROM competitions
+WHERE active AND scraped AND flashscore_path IS NOT NULL
+`
+
+type ListScrapedCompetitionPathsRow struct {
+	ID             pgtype.UUID
+	FlashscorePath string
+	SplitSeason    bool
+}
+
+// Competitions a club page's matches are kept for, by Flashscore path.
+func (q *Queries) ListScrapedCompetitionPaths(ctx context.Context) ([]ListScrapedCompetitionPathsRow, error) {
+	rows, err := q.db.Query(ctx, listScrapedCompetitionPaths)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScrapedCompetitionPathsRow
+	for rows.Next() {
+		var i ListScrapedCompetitionPathsRow
+		if err := rows.Scan(&i.ID, &i.FlashscorePath, &i.SplitSeason); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSquadsToSync = `-- name: ListSquadsToSync :many
 SELECT t.id, t.flashscore_id::text AS flashscore_id, t.flashscore_slug::text AS flashscore_slug
 FROM teams t
@@ -195,6 +244,20 @@ UPDATE teams SET squad_synced_at = now() WHERE id = $1
 
 func (q *Queries) MarkSquadSynced(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markSquadSynced, id)
+	return err
+}
+
+const setCompetitionSplitSeason = `-- name: SetCompetitionSplitSeason :exec
+UPDATE competitions SET split_season = $2 WHERE id = $1 AND split_season IS DISTINCT FROM $2
+`
+
+type SetCompetitionSplitSeasonParams struct {
+	ID          pgtype.UUID
+	SplitSeason bool
+}
+
+func (q *Queries) SetCompetitionSplitSeason(ctx context.Context, arg SetCompetitionSplitSeasonParams) error {
+	_, err := q.db.Exec(ctx, setCompetitionSplitSeason, arg.ID, arg.SplitSeason)
 	return err
 }
 
@@ -414,4 +477,55 @@ func (q *Queries) UpsertTeamPageCompetition(ctx context.Context, arg UpsertTeamP
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const upsertTeamPageMatch = `-- name: UpsertTeamPageMatch :exec
+INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, round, phase, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
+ON CONFLICT (flashscore_id) DO UPDATE
+SET status = EXCLUDED.status,
+    match_time = EXCLUDED.match_time,
+    home_score = EXCLUDED.home_score,
+    away_score = EXCLUDED.away_score,
+    stage = EXCLUDED.stage,
+    stage_started_at = EXCLUDED.stage_started_at,
+    data_as_of = now(),
+    updated_at = now()
+`
+
+type UpsertTeamPageMatchParams struct {
+	FlashscoreID   string
+	CompetitionID  pgtype.UUID
+	Season         int16
+	HomeTeamID     pgtype.UUID
+	AwayTeamID     pgtype.UUID
+	Status         string
+	MatchTime      pgtype.Timestamptz
+	HomeScore      pgtype.Int2
+	AwayScore      pgtype.Int2
+	Stage          pgtype.Int2
+	StageStartedAt pgtype.Timestamptz
+	Round          pgtype.Text
+	Phase          pgtype.Text
+}
+
+// A match from a club page. A new one gets the season from its date; a known
+// one keeps the season, round, and phase the league page gave it.
+func (q *Queries) UpsertTeamPageMatch(ctx context.Context, arg UpsertTeamPageMatchParams) error {
+	_, err := q.db.Exec(ctx, upsertTeamPageMatch,
+		arg.FlashscoreID,
+		arg.CompetitionID,
+		arg.Season,
+		arg.HomeTeamID,
+		arg.AwayTeamID,
+		arg.Status,
+		arg.MatchTime,
+		arg.HomeScore,
+		arg.AwayScore,
+		arg.Stage,
+		arg.StageStartedAt,
+		arg.Round,
+		arg.Phase,
+	)
+	return err
 }

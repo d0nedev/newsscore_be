@@ -107,3 +107,30 @@ SET team_id = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_i
     shirt_number = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_id) IS NULL
                         THEN coalesce(EXCLUDED.shirt_number, players.shirt_number) ELSE players.shirt_number END,
     updated_at = now();
+
+-- name: SetCompetitionSplitSeason :exec
+UPDATE competitions SET split_season = $2 WHERE id = $1 AND split_season IS DISTINCT FROM $2;
+
+-- name: ListScrapedCompetitionPaths :many
+-- Competitions a club page's matches are kept for, by Flashscore path.
+SELECT id, flashscore_path::text AS flashscore_path, split_season
+FROM competitions
+WHERE active AND scraped AND flashscore_path IS NOT NULL;
+
+-- name: GetTeamPage :one
+SELECT id, flashscore_slug::text AS flashscore_slug FROM teams WHERE flashscore_id = $1 AND flashscore_slug IS NOT NULL;
+
+-- name: UpsertTeamPageMatch :exec
+-- A match from a club page. A new one gets the season from its date; a known
+-- one keeps the season, round, and phase the league page gave it.
+INSERT INTO matches (flashscore_id, competition_id, season, home_team_id, away_team_id, status, match_time, home_score, away_score, stage, stage_started_at, round, phase, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now())
+ON CONFLICT (flashscore_id) DO UPDATE
+SET status = EXCLUDED.status,
+    match_time = EXCLUDED.match_time,
+    home_score = EXCLUDED.home_score,
+    away_score = EXCLUDED.away_score,
+    stage = EXCLUDED.stage,
+    stage_started_at = EXCLUDED.stage_started_at,
+    data_as_of = now(),
+    updated_at = now();

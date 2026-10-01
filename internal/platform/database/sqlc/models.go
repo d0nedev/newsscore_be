@@ -21,6 +21,7 @@ type Competition struct {
 	CountryID      pgtype.UUID
 	Scraped        bool
 	SofascoreID    pgtype.Int4
+	SplitSeason    bool
 }
 
 type CompetitionStanding struct {

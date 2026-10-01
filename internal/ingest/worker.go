@@ -158,9 +158,12 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetitionsRow) error {
-	matches, teams, err := flashscore.ScrapeLeague(c.FlashscorePath)
+	matches, teams, split, err := flashscore.ScrapeLeague(c.FlashscorePath)
 	if err != nil {
 		return fmt.Errorf("scrape %s: %w", c.FlashscorePath, err)
+	}
+	if err := w.db.SetCompetitionSplitSeason(ctx, db.SetCompetitionSplitSeasonParams{ID: c.ID, SplitSeason: split}); err != nil {
+		return err
 	}
 
 	w.logger.Info("competition scraped", slog.String("competition", c.Slug), slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))

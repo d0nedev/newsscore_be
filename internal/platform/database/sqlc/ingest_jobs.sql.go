@@ -64,16 +64,44 @@ SELECT 'match_details', m.flashscore_id
 FROM matches m
 WHERE m.status = 'finished'
   AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
+  AND m.season >= (SELECT max(season) FROM matches cur
+                   WHERE cur.competition_id = m.competition_id AND cur.status = 'finished')
 ORDER BY m.match_time DESC
 ON CONFLICT (kind, target) DO UPDATE
 SET status = 'pending', attempts = 0, not_before = now(), updated_at = now()
 WHERE ingest_jobs.status = 'done'
 `
 
-// Finished matches without details, newest first. A done job whose details
-// are gone again (stats cleared by a migration) is queued anew; a failed one stays failed.
+// Finished matches without details in their competition's current season,
+// newest first: club pages also bring last season's results, kept for scores
+// only. A done job whose details are gone again (stats cleared by a migration)
+// is queued anew; a failed one stays failed.
 func (q *Queries) EnqueueMatchDetails(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, enqueueMatchDetails)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const enqueueTeamPages = `-- name: EnqueueTeamPages :execrows
+INSERT INTO ingest_jobs (kind, target)
+SELECT 'team_page', t.flashscore_id
+FROM teams t
+WHERE t.country_id IS NULL
+  AND t.flashscore_id IS NOT NULL
+  AND t.flashscore_slug IS NOT NULL
+  AND EXISTS (
+      SELECT 1 FROM matches m JOIN competitions c ON c.id = m.competition_id
+      WHERE c.active AND c.scraped AND t.id IN (m.home_team_id, m.away_team_id))
+ON CONFLICT (kind, target) DO UPDATE
+SET status = 'pending', attempts = 0, not_before = now(), updated_at = now()
+WHERE ingest_jobs.status = 'done' AND ingest_jobs.done_at < now() - interval '7 days'
+`
+
+// Every club in a scraped competition, once a week.
+func (q *Queries) EnqueueTeamPages(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, enqueueTeamPages)
 	if err != nil {
 		return 0, err
 	}
