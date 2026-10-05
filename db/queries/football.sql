@@ -33,10 +33,11 @@ RETURNING id;
 
 -- name: ListLiveCandidates :many
 -- Live matches, plus scheduled ones whose kick-off has passed but the league page has not caught up.
-SELECT id, flashscore_id, home_team_id, away_team_id
+SELECT id, flashscore_id::text AS flashscore_id, home_team_id, away_team_id
 FROM matches
-WHERE status = 'live'
-   OR (status = 'scheduled' AND match_time <= now() AND match_time > now() - interval '3 hours');
+WHERE flashscore_id IS NOT NULL -- SofaScore matches are refreshed by the league sync
+  AND (status = 'live'
+       OR (status = 'scheduled' AND match_time <= now() AND match_time > now() - interval '3 hours'));
 
 -- name: UpdateMatchLive :exec
 UPDATE matches

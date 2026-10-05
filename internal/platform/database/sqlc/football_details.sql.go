@@ -12,7 +12,7 @@ import (
 )
 
 const getMatchByFlashscoreID = `-- name: GetMatchByFlashscoreID :one
-SELECT id, flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1
+SELECT id, flashscore_id::text AS flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1
 `
 
 type GetMatchByFlashscoreIDRow struct {
@@ -22,7 +22,7 @@ type GetMatchByFlashscoreIDRow struct {
 	AwayTeamID   pgtype.UUID
 }
 
-func (q *Queries) GetMatchByFlashscoreID(ctx context.Context, flashscoreID string) (GetMatchByFlashscoreIDRow, error) {
+func (q *Queries) GetMatchByFlashscoreID(ctx context.Context, flashscoreID pgtype.Text) (GetMatchByFlashscoreIDRow, error) {
 	row := q.db.QueryRow(ctx, getMatchByFlashscoreID, flashscoreID)
 	var i GetMatchByFlashscoreIDRow
 	err := row.Scan(

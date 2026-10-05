@@ -96,12 +96,12 @@ SELECT p.id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
          WHERE l.player_id = p.id AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid)
            AND (l.starter OR EXISTS (SELECT 1 FROM match_events e
                                       WHERE e.match_id = l.match_id AND e.type = 'Substitution'
-                                        AND e.player_flashscore_id = p.flashscore_id)))::int AS apps,
+                                        AND (e.player_flashscore_id = p.flashscore_id OR e.player_sofascore_id = p.sofascore_id))))::int AS apps,
        (SELECT count(*) FROM match_events e JOIN matches m ON m.id = e.match_id
-         WHERE e.player_flashscore_id = p.flashscore_id AND e.type IN ('Goal', 'Penalty')
+         WHERE (e.player_flashscore_id = p.flashscore_id OR e.player_sofascore_id = p.sofascore_id) AND e.type IN ('Goal', 'Penalty')
            AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid))::int AS goals,
        (SELECT count(*) FROM match_events e JOIN matches m ON m.id = e.match_id
-         WHERE e.related_flashscore_id = p.flashscore_id AND e.type IN ('Goal', 'Penalty')
+         WHERE (e.related_flashscore_id = p.flashscore_id OR e.related_sofascore_id = p.sofascore_id) AND e.type IN ('Goal', 'Penalty')
            AND m.season = $1::smallint AND ($2::uuid IS NULL OR m.competition_id = $2::uuid))::int AS assists
 FROM players p
 WHERE p.team_id = $3::uuid

@@ -45,7 +45,7 @@ SET stats = EXCLUDED.stats,
     updated_at = now();
 
 -- name: GetMatchByFlashscoreID :one
-SELECT id, flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1;
+SELECT id, flashscore_id::text AS flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1;
 
 -- name: ListPlayersMissingPhoto :many
 SELECT id, flashscore_id::text AS flashscore_id, photo_source_url::text AS photo_source_url

@@ -25,6 +25,59 @@ func (q *Queries) DeleteStandingSnapshot(ctx context.Context, arg DeleteStanding
 	return err
 }
 
+const deleteTopPlayers = `-- name: DeleteTopPlayers :exec
+DELETE FROM competition_top_players WHERE competition_id = $1 AND season = $2
+`
+
+type DeleteTopPlayersParams struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+}
+
+func (q *Queries) DeleteTopPlayers(ctx context.Context, arg DeleteTopPlayersParams) error {
+	_, err := q.db.Exec(ctx, deleteTopPlayers, arg.CompetitionID, arg.Season)
+	return err
+}
+
+const enqueueSofascoreMatches = `-- name: EnqueueSofascoreMatches :execrows
+INSERT INTO ingest_jobs (kind, target)
+SELECT 'sofascore_match', m.sofascore_id::text
+FROM matches m
+WHERE m.status = 'finished'
+  AND m.sofascore_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
+ORDER BY m.match_time DESC
+ON CONFLICT (kind, target) DO UPDATE
+SET status = 'pending', attempts = 0, not_before = now(), updated_at = now()
+WHERE ingest_jobs.status = 'done'
+`
+
+// Finished SofaScore matches without details, newest first; see EnqueueMatchDetails.
+func (q *Queries) EnqueueSofascoreMatches(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, enqueueSofascoreMatches)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getMatchBySofascoreID = `-- name: GetMatchBySofascoreID :one
+SELECT id, home_team_id, away_team_id FROM matches WHERE sofascore_id = $1
+`
+
+type GetMatchBySofascoreIDRow struct {
+	ID         pgtype.UUID
+	HomeTeamID pgtype.UUID
+	AwayTeamID pgtype.UUID
+}
+
+func (q *Queries) GetMatchBySofascoreID(ctx context.Context, sofascoreID pgtype.Int4) (GetMatchBySofascoreIDRow, error) {
+	row := q.db.QueryRow(ctx, getMatchBySofascoreID, sofascoreID)
+	var i GetMatchBySofascoreIDRow
+	err := row.Scan(&i.ID, &i.HomeTeamID, &i.AwayTeamID)
+	return i, err
+}
+
 const insertStandingSnapshot = `-- name: InsertStandingSnapshot :exec
 INSERT INTO competition_standings (competition_id, season, group_name, group_order, position, team_id,
                                    played, won, drawn, lost, goals_for, goals_against, points)
@@ -64,6 +117,141 @@ func (q *Queries) InsertStandingSnapshot(ctx context.Context, arg InsertStanding
 		arg.Points,
 	)
 	return err
+}
+
+const insertTopPlayer = `-- name: InsertTopPlayer :exec
+INSERT INTO competition_top_players (competition_id, season, category, rank, player_id, team_id, value, appearances)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`
+
+type InsertTopPlayerParams struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+	Category      string
+	Rank          int16
+	PlayerID      pgtype.UUID
+	TeamID        pgtype.UUID
+	Value         pgtype.Numeric
+	Appearances   pgtype.Int2
+}
+
+func (q *Queries) InsertTopPlayer(ctx context.Context, arg InsertTopPlayerParams) error {
+	_, err := q.db.Exec(ctx, insertTopPlayer,
+		arg.CompetitionID,
+		arg.Season,
+		arg.Category,
+		arg.Rank,
+		arg.PlayerID,
+		arg.TeamID,
+		arg.Value,
+		arg.Appearances,
+	)
+	return err
+}
+
+const listSofascoreCompetitions = `-- name: ListSofascoreCompetitions :many
+SELECT id, slug, name, sofascore_id::int AS sofascore_id
+FROM competitions
+WHERE active AND sofascore_id IS NOT NULL AND flashscore_path IS NULL
+ORDER BY sort_order, slug
+`
+
+type ListSofascoreCompetitionsRow struct {
+	ID          pgtype.UUID
+	Slug        string
+	Name        string
+	SofascoreID int32
+}
+
+func (q *Queries) ListSofascoreCompetitions(ctx context.Context) ([]ListSofascoreCompetitionsRow, error) {
+	rows, err := q.db.Query(ctx, listSofascoreCompetitions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSofascoreCompetitionsRow
+	for rows.Next() {
+		var i ListSofascoreCompetitionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.SofascoreID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSofascoreMatchesWithoutDetails = `-- name: ListSofascoreMatchesWithoutDetails :many
+SELECT m.sofascore_id::int AS sofascore_id
+FROM matches m
+WHERE m.status = 'finished'
+  AND m.sofascore_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
+ORDER BY m.match_time DESC
+`
+
+// For cmd/seed-sofascore: the backlog EnqueueSofascoreMatches would queue, fetched in one go.
+func (q *Queries) ListSofascoreMatchesWithoutDetails(ctx context.Context) ([]int32, error) {
+	rows, err := q.db.Query(ctx, listSofascoreMatchesWithoutDetails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var sofascore_id int32
+		if err := rows.Scan(&sofascore_id); err != nil {
+			return nil, err
+		}
+		items = append(items, sofascore_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSofascoreSquadsToSync = `-- name: ListSofascoreSquadsToSync :many
+SELECT t.id, t.sofascore_id::int AS sofascore_id
+FROM teams t
+WHERE t.sofascore_id IS NOT NULL
+  AND (t.squad_synced_at IS NULL OR t.squad_synced_at < now() - interval '7 days')
+  AND EXISTS (SELECT 1 FROM competition_standings s WHERE s.team_id = t.id)
+ORDER BY t.squad_synced_at NULLS FIRST
+LIMIT $1
+`
+
+type ListSofascoreSquadsToSyncRow struct {
+	ID          pgtype.UUID
+	SofascoreID int32
+}
+
+// Teams in a SofaScore competition's table whose squad was not read this week, oldest first.
+func (q *Queries) ListSofascoreSquadsToSync(ctx context.Context, limit int32) ([]ListSofascoreSquadsToSyncRow, error) {
+	rows, err := q.db.Query(ctx, listSofascoreSquadsToSync, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSofascoreSquadsToSyncRow
+	for rows.Next() {
+		var i ListSofascoreSquadsToSyncRow
+		if err := rows.Scan(&i.ID, &i.SofascoreID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listStandingSnapshot = `-- name: ListStandingSnapshot :many
@@ -146,7 +334,7 @@ type UpsertSofascoreCompetitionParams struct {
 	SofascoreID pgtype.Int4
 }
 
-// One-off seed from SofaScore (cmd/seed-sofascore); see migration 0024.
+// SofaScore competitions: the ingestor (migration 0026) and the one-off seed (cmd/seed-sofascore, migration 0024).
 func (q *Queries) UpsertSofascoreCompetition(ctx context.Context, arg UpsertSofascoreCompetitionParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertSofascoreCompetition,
 		arg.Slug,
@@ -160,9 +348,123 @@ func (q *Queries) UpsertSofascoreCompetition(ctx context.Context, arg UpsertSofa
 	return id, err
 }
 
-const upsertSofascorePlayer = `-- name: UpsertSofascorePlayer :exec
-INSERT INTO players (sofascore_id, team_id, name, nationality, position, birth_date, height_cm, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+const upsertSofascoreLineup = `-- name: UpsertSofascoreLineup :exec
+INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter, stats)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (match_id, player_id) DO UPDATE
+SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter, stats = EXCLUDED.stats
+`
+
+type UpsertSofascoreLineupParams struct {
+	MatchID     pgtype.UUID
+	PlayerID    pgtype.UUID
+	TeamID      pgtype.UUID
+	ShirtNumber pgtype.Int2
+	Starter     bool
+	Stats       []byte
+}
+
+func (q *Queries) UpsertSofascoreLineup(ctx context.Context, arg UpsertSofascoreLineupParams) error {
+	_, err := q.db.Exec(ctx, upsertSofascoreLineup,
+		arg.MatchID,
+		arg.PlayerID,
+		arg.TeamID,
+		arg.ShirtNumber,
+		arg.Starter,
+		arg.Stats,
+	)
+	return err
+}
+
+const upsertSofascoreMatch = `-- name: UpsertSofascoreMatch :exec
+INSERT INTO matches (sofascore_id, competition_id, season, home_team_id, away_team_id, status, match_time,
+                     home_score, away_score, round, data_as_of, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
+ON CONFLICT (sofascore_id) DO UPDATE
+SET status = EXCLUDED.status,
+    season = EXCLUDED.season,
+    match_time = EXCLUDED.match_time,
+    home_score = EXCLUDED.home_score,
+    away_score = EXCLUDED.away_score,
+    round = EXCLUDED.round,
+    data_as_of = now(),
+    updated_at = now()
+`
+
+type UpsertSofascoreMatchParams struct {
+	SofascoreID   pgtype.Int4
+	CompetitionID pgtype.UUID
+	Season        int16
+	HomeTeamID    pgtype.UUID
+	AwayTeamID    pgtype.UUID
+	Status        string
+	MatchTime     pgtype.Timestamptz
+	HomeScore     pgtype.Int2
+	AwayScore     pgtype.Int2
+	Round         pgtype.Text
+}
+
+func (q *Queries) UpsertSofascoreMatch(ctx context.Context, arg UpsertSofascoreMatchParams) error {
+	_, err := q.db.Exec(ctx, upsertSofascoreMatch,
+		arg.SofascoreID,
+		arg.CompetitionID,
+		arg.Season,
+		arg.HomeTeamID,
+		arg.AwayTeamID,
+		arg.Status,
+		arg.MatchTime,
+		arg.HomeScore,
+		arg.AwayScore,
+		arg.Round,
+	)
+	return err
+}
+
+const upsertSofascoreMatchEvent = `-- name: UpsertSofascoreMatchEvent :exec
+INSERT INTO match_events (match_id, flashscore_id, type, minute, player_name, team_id,
+                          player_sofascore_id, related_player_name, related_sofascore_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+ON CONFLICT (match_id, flashscore_id) DO UPDATE
+SET type = EXCLUDED.type,
+    minute = EXCLUDED.minute,
+    player_name = EXCLUDED.player_name,
+    team_id = EXCLUDED.team_id,
+    player_sofascore_id = EXCLUDED.player_sofascore_id,
+    related_player_name = EXCLUDED.related_player_name,
+    related_sofascore_id = EXCLUDED.related_sofascore_id,
+    updated_at = now()
+`
+
+type UpsertSofascoreMatchEventParams struct {
+	MatchID            pgtype.UUID
+	FlashscoreID       string
+	Type               string
+	Minute             string
+	PlayerName         string
+	TeamID             pgtype.UUID
+	PlayerSofascoreID  pgtype.Int4
+	RelatedPlayerName  pgtype.Text
+	RelatedSofascoreID pgtype.Int4
+}
+
+func (q *Queries) UpsertSofascoreMatchEvent(ctx context.Context, arg UpsertSofascoreMatchEventParams) error {
+	_, err := q.db.Exec(ctx, upsertSofascoreMatchEvent,
+		arg.MatchID,
+		arg.FlashscoreID,
+		arg.Type,
+		arg.Minute,
+		arg.PlayerName,
+		arg.TeamID,
+		arg.PlayerSofascoreID,
+		arg.RelatedPlayerName,
+		arg.RelatedSofascoreID,
+	)
+	return err
+}
+
+const upsertSofascorePlayer = `-- name: UpsertSofascorePlayer :one
+INSERT INTO players (sofascore_id, team_id, name, nationality, position, birth_date, height_cm, shirt_number, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 ON CONFLICT (sofascore_id) DO UPDATE
 SET team_id = EXCLUDED.team_id,
     name = EXCLUDED.name,
@@ -170,7 +472,9 @@ SET team_id = EXCLUDED.team_id,
     position = coalesce(EXCLUDED.position, players.position),
     birth_date = coalesce(EXCLUDED.birth_date, players.birth_date),
     height_cm = coalesce(EXCLUDED.height_cm, players.height_cm),
+    shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
     updated_at = now()
+RETURNING id
 `
 
 type UpsertSofascorePlayerParams struct {
@@ -181,10 +485,11 @@ type UpsertSofascorePlayerParams struct {
 	Position    pgtype.Text
 	BirthDate   pgtype.Date
 	HeightCm    pgtype.Int2
+	ShirtNumber pgtype.Int2
 }
 
-func (q *Queries) UpsertSofascorePlayer(ctx context.Context, arg UpsertSofascorePlayerParams) error {
-	_, err := q.db.Exec(ctx, upsertSofascorePlayer,
+func (q *Queries) UpsertSofascorePlayer(ctx context.Context, arg UpsertSofascorePlayerParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertSofascorePlayer,
 		arg.SofascoreID,
 		arg.TeamID,
 		arg.Name,
@@ -192,8 +497,11 @@ func (q *Queries) UpsertSofascorePlayer(ctx context.Context, arg UpsertSofascore
 		arg.Position,
 		arg.BirthDate,
 		arg.HeightCm,
+		arg.ShirtNumber,
 	)
-	return err
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertSofascoreTeam = `-- name: UpsertSofascoreTeam :one

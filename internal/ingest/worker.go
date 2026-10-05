@@ -24,6 +24,8 @@ type Worker struct {
 	logger        *slog.Logger
 	detailsPerRun int
 	assetsDir     string
+
+	sofascoreSynced time.Time // last SofaScore league sync, see syncSofascore
 }
 
 func NewWorker(queries *db.Queries, logger *slog.Logger, detailsPerRun int, assetsDir string) *Worker {
@@ -61,6 +63,9 @@ func (w *Worker) Sync(ctx context.Context) error {
 	}
 	if err := w.syncImages(ctx); err != nil {
 		w.logger.Error("sync images failed", slog.Any("error", err))
+	}
+	if err := w.syncSofascore(ctx); err != nil {
+		w.logger.Error("sync sofascore failed", slog.Any("error", err))
 	}
 	return w.runJobs(ctx)
 }
@@ -277,7 +282,7 @@ func (w *Worker) upsertMatch(ctx context.Context, m domain.Match, competition pg
 	}
 
 	_, err := w.db.UpsertMatch(ctx, db.UpsertMatchParams{
-		FlashscoreID:   m.FlashscoreID,
+		FlashscoreID:   optText(m.FlashscoreID),
 		CompetitionID:  competition,
 		Round:          optText(m.Round),
 		Phase:          optText(m.Phase),

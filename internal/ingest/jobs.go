@@ -10,6 +10,7 @@ import (
 	"github.com/d0nedev/newsscore/internal/domain"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
+	"github.com/d0nedev/newsscore/internal/provider/sofascore"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -32,6 +33,11 @@ func (w *Worker) runJobs(ctx context.Context) error {
 	} else if n > 0 {
 		w.logger.Info("jobs queued", slog.String("kind", "match_details"), slog.Int64("count", n))
 	}
+	if n, err := w.db.EnqueueSofascoreMatches(ctx); err != nil {
+		return fmt.Errorf("enqueue sofascore matches: %w", err)
+	} else if n > 0 {
+		w.logger.Info("jobs queued", slog.String("kind", "sofascore_match"), slog.Int64("count", n))
+	}
 	if n, err := w.db.EnqueueTeamPages(ctx); err != nil {
 		return fmt.Errorf("enqueue team pages: %w", err)
 	} else if n > 0 {
@@ -51,8 +57,8 @@ func (w *Worker) runJobs(ctx context.Context) error {
 		switch {
 		case err == nil:
 			err = w.db.FinishJob(ctx, j.ID)
-		case errors.Is(err, flashscore.ErrBlocked):
-			w.logger.Error("flashscore blocked us, pausing jobs", slog.Duration("pause", blockedPause), slog.Any("error", err))
+		case errors.Is(err, flashscore.ErrBlocked), errors.Is(err, sofascore.ErrBlocked):
+			w.logger.Error("source blocked us, pausing jobs", slog.Duration("pause", blockedPause), slog.Any("error", err))
 			for _, rest := range jobs[i:] {
 				if err := w.db.ReleaseJob(ctx, db.ReleaseJobParams{ID: rest.ID, DelaySeconds: blockedPause.Seconds()}); err != nil {
 					return err
@@ -80,13 +86,15 @@ func (w *Worker) runJobs(ctx context.Context) error {
 func (w *Worker) runJob(ctx context.Context, j db.ClaimJobsRow) error {
 	switch j.Kind {
 	case "match_details":
-		m, err := w.db.GetMatchByFlashscoreID(ctx, j.Target)
+		m, err := w.db.GetMatchByFlashscoreID(ctx, optText(j.Target))
 		if err != nil {
 			return fmt.Errorf("get match: %w", err)
 		}
 		return w.syncMatchDetails(ctx, m)
 	case "team_page":
 		return w.syncTeamPage(ctx, j.Target)
+	case "sofascore_match":
+		return w.syncSofascoreMatch(ctx, j.Target)
 	}
 	return fmt.Errorf("unknown job kind %q", j.Kind)
 }
@@ -141,7 +149,7 @@ func (w *Worker) syncTeamPage(ctx context.Context, flashscoreID string) error {
 			continue // upsertTeams logged why
 		}
 		if err := w.db.UpsertTeamPageMatch(ctx, db.UpsertTeamPageMatchParams{
-			FlashscoreID:   m.FlashscoreID,
+			FlashscoreID:   optText(m.FlashscoreID),
 			CompetitionID:  c.ID,
 			Season:         int16(flashscore.SeasonOf(m.MatchTime, c.SplitSeason)),
 			HomeTeamID:     home,

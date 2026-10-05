@@ -58,10 +58,11 @@ func (q *Queries) ListActiveCompetitions(ctx context.Context) ([]ListActiveCompe
 }
 
 const listLiveCandidates = `-- name: ListLiveCandidates :many
-SELECT id, flashscore_id, home_team_id, away_team_id
+SELECT id, flashscore_id::text AS flashscore_id, home_team_id, away_team_id
 FROM matches
-WHERE status = 'live'
-   OR (status = 'scheduled' AND match_time <= now() AND match_time > now() - interval '3 hours')
+WHERE flashscore_id IS NOT NULL -- SofaScore matches are refreshed by the league sync
+  AND (status = 'live'
+       OR (status = 'scheduled' AND match_time <= now() AND match_time > now() - interval '3 hours'))
 `
 
 type ListLiveCandidatesRow struct {
@@ -340,7 +341,7 @@ RETURNING id
 `
 
 type UpsertMatchParams struct {
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	CompetitionID  pgtype.UUID
 	Season         int16
 	HomeTeamID     pgtype.UUID
@@ -494,7 +495,7 @@ SET status = EXCLUDED.status,
 `
 
 type UpsertTeamPageMatchParams struct {
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	CompetitionID  pgtype.UUID
 	Season         int16
 	HomeTeamID     pgtype.UUID

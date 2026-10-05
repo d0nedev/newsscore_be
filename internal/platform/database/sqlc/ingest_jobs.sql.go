@@ -63,6 +63,7 @@ INSERT INTO ingest_jobs (kind, target)
 SELECT 'match_details', m.flashscore_id
 FROM matches m
 WHERE m.status = 'finished'
+  AND m.flashscore_id IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
   AND m.season >= (SELECT max(season) FROM matches cur
                    WHERE cur.competition_id = m.competition_id AND cur.status = 'finished')

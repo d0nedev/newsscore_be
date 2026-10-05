@@ -12,7 +12,7 @@ import (
 )
 
 const getPlayer = `-- name: GetPlayer :one
-SELECT p.id, coalesce(p.flashscore_id, '') AS flashscore_id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
+SELECT p.id, coalesce(p.flashscore_id, '') AS flashscore_id, coalesce(p.sofascore_id, 0)::int AS sofascore_id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
        t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name, t.logo_url AS team_logo_url
 FROM players p
 LEFT JOIN teams t ON t.id = p.team_id
@@ -22,6 +22,7 @@ WHERE p.id = $1
 type GetPlayerRow struct {
 	ID            pgtype.UUID
 	FlashscoreID  string
+	SofascoreID   int32
 	Name          string
 	ShirtNumber   pgtype.Int2
 	Position      pgtype.Text
@@ -39,6 +40,7 @@ func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (GetPlayerRow, 
 	err := row.Scan(
 		&i.ID,
 		&i.FlashscoreID,
+		&i.SofascoreID,
 		&i.Name,
 		&i.ShirtNumber,
 		&i.Position,
@@ -59,27 +61,28 @@ SELECT m.id, m.match_time, m.status, m.home_score, m.away_score, m.round,
        h.name AS home_name, a.name AS away_name,
        m.home_team_id,
        EXISTS (SELECT 1 FROM match_events e WHERE e.match_id = m.id AND e.type = 'Substitution'
-                 AND e.player_flashscore_id = $1::text) AS subbed_on,
+                 AND (e.player_flashscore_id = $1::text OR e.player_sofascore_id = $2::int)) AS subbed_on,
        (SELECT count(*) FROM match_events e WHERE e.match_id = m.id AND e.type IN ('Goal', 'Penalty')
-          AND e.player_flashscore_id = $1::text)::int AS goals,
+          AND (e.player_flashscore_id = $1::text OR e.player_sofascore_id = $2::int))::int AS goals,
        (SELECT count(*) FROM match_events e WHERE e.match_id = m.id AND e.type IN ('Goal', 'Penalty')
-          AND e.related_flashscore_id = $1::text)::int AS assists,
+          AND (e.related_flashscore_id = $1::text OR e.related_sofascore_id = $2::int))::int AS assists,
        (SELECT count(*) FROM match_events e WHERE e.match_id = m.id AND e.type = 'Yellow Card'
-          AND e.player_flashscore_id = $1::text)::int AS yellow,
+          AND (e.player_flashscore_id = $1::text OR e.player_sofascore_id = $2::int))::int AS yellow,
        (SELECT count(*) FROM match_events e WHERE e.match_id = m.id AND e.type IN ('Red Card', 'Yellow/Red Card')
-          AND e.player_flashscore_id = $1::text)::int AS red
+          AND (e.player_flashscore_id = $1::text OR e.player_sofascore_id = $2::int))::int AS red
 FROM match_lineups l
 JOIN matches m ON m.id = l.match_id
 JOIN teams h ON h.id = m.home_team_id
 JOIN teams a ON a.id = m.away_team_id
 JOIN competitions c ON c.id = m.competition_id
-WHERE l.player_id = $2::uuid AND m.season = $3::smallint
-  AND ($4::uuid IS NULL OR m.competition_id = $4::uuid)
+WHERE l.player_id = $3::uuid AND m.season = $4::smallint
+  AND ($5::uuid IS NULL OR m.competition_id = $5::uuid)
 ORDER BY m.match_time DESC
 `
 
 type ListPlayerMatchesParams struct {
 	FlashscoreID  string
+	SofascoreID   int32
 	PlayerID      pgtype.UUID
 	Season        int16
 	CompetitionID pgtype.UUID
@@ -110,6 +113,7 @@ type ListPlayerMatchesRow struct {
 func (q *Queries) ListPlayerMatches(ctx context.Context, arg ListPlayerMatchesParams) ([]ListPlayerMatchesRow, error) {
 	rows, err := q.db.Query(ctx, listPlayerMatches,
 		arg.FlashscoreID,
+		arg.SofascoreID,
 		arg.PlayerID,
 		arg.Season,
 		arg.CompetitionID,

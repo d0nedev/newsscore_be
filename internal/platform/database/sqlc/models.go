@@ -40,6 +40,17 @@ type CompetitionStanding struct {
 	Points        int16
 }
 
+type CompetitionTopPlayer struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+	Category      string
+	Rank          int16
+	PlayerID      pgtype.UUID
+	TeamID        pgtype.UUID
+	Value         pgtype.Numeric
+	Appearances   pgtype.Int2
+}
+
 type Country struct {
 	ID                 pgtype.UUID
 	Slug               string
@@ -63,7 +74,7 @@ type IngestJob struct {
 
 type Match struct {
 	ID             pgtype.UUID
-	FlashscoreID   string
+	FlashscoreID   pgtype.Text
 	Season         int16
 	HomeTeamID     pgtype.UUID
 	AwayTeamID     pgtype.UUID
@@ -78,6 +89,7 @@ type Match struct {
 	CompetitionID  pgtype.UUID
 	Round          pgtype.Text
 	Phase          pgtype.Text
+	SofascoreID    pgtype.Int4
 }
 
 type MatchEvent struct {
@@ -92,6 +104,8 @@ type MatchEvent struct {
 	PlayerFlashscoreID  pgtype.Text
 	RelatedPlayerName   pgtype.Text
 	RelatedFlashscoreID pgtype.Text
+	PlayerSofascoreID   pgtype.Int4
+	RelatedSofascoreID  pgtype.Int4
 }
 
 type MatchLineup struct {
@@ -100,6 +114,7 @@ type MatchLineup struct {
 	TeamID      pgtype.UUID
 	ShirtNumber pgtype.Int2
 	Starter     bool
+	Stats       []byte
 }
 
 type MatchRow struct {
