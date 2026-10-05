@@ -26,10 +26,13 @@ const squadsPerRunSS = 20
 
 // syncSofascore refreshes every SofaScore competition (matches, table, top
 // players) at most hourly, and a few squads. Match details go through jobs.
+// A 403 stops the run until next hour: SofaScore asks for a captcha once it
+// sees too many requests, and more of them only keep it asking.
 func (w *Worker) syncSofascore(ctx context.Context) error {
 	if time.Since(w.sofascoreSynced) < sofascoreEvery {
 		return nil
 	}
+	w.sofascoreSynced = time.Now()
 	competitions, err := w.db.ListSofascoreCompetitions(ctx)
 	if err != nil {
 		return fmt.Errorf("list sofascore competitions: %w", err)
@@ -38,15 +41,15 @@ func (w *Worker) syncSofascore(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := w.syncSofascoreCompetition(ctx, c); err != nil {
+		err := w.syncSofascoreCompetition(ctx, c)
+		if errors.Is(err, sofascore.ErrBlocked) {
+			return err
+		}
+		if err != nil {
 			w.logger.Error("sync sofascore competition failed", slog.String("competition", c.Slug), slog.Any("error", err))
 		}
 	}
-	if err := w.syncSofascoreSquads(ctx, squadsPerRunSS); err != nil {
-		w.logger.Error("sync sofascore squads failed", slog.Any("error", err))
-	}
-	w.sofascoreSynced = time.Now()
-	return nil
+	return w.syncSofascoreSquads(ctx, squadsPerRunSS)
 }
 
 func (w *Worker) syncSofascoreCompetition(ctx context.Context, c db.ListSofascoreCompetitionsRow) error {
