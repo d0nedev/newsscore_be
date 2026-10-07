@@ -29,27 +29,45 @@ var feedPatterns = map[string]*regexp.Regexp{
 	"results":  regexp.MustCompile("(?s)cjs\\.initialFeeds\\[['\"]results['\"]\\]\\s*=\\s*\\{\\s*data:\\s*`(.*?)`"),
 }
 
+// League is one competition page: its matches and teams, and what its heading says.
+type League struct {
+	Matches []domain.Match
+	Teams   []domain.Team
+	Split   bool   // the season spans two years ("2026/2027") rather than one ("2026")
+	Logo    string // 100x100, "" if the heading has none
+}
+
 // ScrapeLeague reads fixtures (scheduled and live) and results of one competition
 // page, e.g. path "/football/indonesia/super-league/", from one page load.
-// split reports a season across two years ("2026/2027") rather than one ("2026").
 // Each feed holds at most 100 matches: team pages (ScrapeTeam) fill the rest.
-func ScrapeLeague(path string) (matches []domain.Match, teams []domain.Team, split bool, err error) {
+func ScrapeLeague(path string) (League, error) {
 	html, err := fetchPage(path)
 	if err != nil {
-		return nil, nil, false, err
+		return League{}, err
 	}
 
 	found := seasonPattern.FindStringSubmatch(html)
 	if len(found) < 2 {
-		return nil, nil, false, fmt.Errorf("season not found in page heading")
+		return League{}, fmt.Errorf("season not found in page heading")
 	}
 	season, _ := strconv.Atoi(found[1])
 
-	matches, teams, err = parseFeeds(html)
+	matches, teams, err := parseFeeds(html)
 	for i := range matches {
 		matches[i].Season = season
 	}
-	return matches, teams, found[2] != "", err
+	return League{Matches: matches, Teams: teams, Split: found[2] != "", Logo: headingLogo(html)}, err
+}
+
+var headingLogoPattern = regexp.MustCompile(`class="heading__logo[^"]*" src="(https://static\.flashscore\.com/[^"]+)"`)
+
+// headingLogo is the 100x100 logo a league or team page shows in its heading;
+// the feeds only carry 30x30 icons.
+func headingLogo(html string) string {
+	if m := headingLogoPattern.FindStringSubmatch(html); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // SeasonOf names the season a match on t belongs to, as Flashscore does: the
@@ -306,17 +324,22 @@ var (
 	squadRoles   = map[string]string{"Goalkeepers": "GK", "Defenders": "DF", "Midfielders": "MF", "Forwards": "FW"}
 )
 
-// ScrapeSquad reads a team's squad page, e.g. path "/team/persik-kediri/MDFOmQ7H/squad/".
-func ScrapeSquad(path string) ([]SquadPlayer, error) {
+// ErrNoSquad means the squad page lists no players: lower-league clubs often have
+// none, so it is not a failure to retry at once.
+var ErrNoSquad = errors.New("no players on squad page")
+
+// ScrapeSquad reads a team's squad page, e.g. path "/team/persik-kediri/MDFOmQ7H/squad/",
+// and its heading's 100x100 logo ("" if none). The logo comes back even with ErrNoSquad.
+func ScrapeSquad(path string) ([]SquadPlayer, string, error) {
 	html, err := fetchPage(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	players := parseSquad(html)
+	players, logo := parseSquad(html), headingLogo(html)
 	if len(players) == 0 {
-		return nil, fmt.Errorf("no players on squad page")
+		return nil, logo, ErrNoSquad
 	}
-	return players, nil
+	return players, logo, nil
 }
 
 // parseSquad reads the squad tables: a title (Goalkeepers, ..., Coach) then its

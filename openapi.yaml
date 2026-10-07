@@ -526,6 +526,7 @@ components:
         countryId: { type: string, description: 'Country slug, e.g. "indonesia"' }
         type: { type: string, enum: [league, cup] }
         season: { type: integer, description: 0 until a match is stored }
+        logo: { type: string, description: "Local path under /assets/; prefix the API base URL. 100x100 (Flashscore) or 150x150 (SofaScore); absent until downloaded or when the source has none" }
         standings: { type: array, items: { $ref: "#/components/schemas/StandingRow" }, description: "Only on GET /leagues/{id}; empty for cups" }
         groups:
           type: array

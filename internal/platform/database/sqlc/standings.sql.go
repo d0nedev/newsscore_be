@@ -12,7 +12,7 @@ import (
 )
 
 const getCompetition = `-- name: GetCompetition :one
-SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped, coalesce(c.logo_url, '')::text AS logo,
        coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
                  FROM matches m WHERE m.competition_id = c.id),
                  -- seeded tables (SofaScore) have no matches
@@ -30,6 +30,7 @@ type GetCompetitionRow struct {
 	CountrySlug string
 	Type        string
 	Scraped     bool
+	Logo        string
 	Season      int16
 }
 
@@ -44,6 +45,7 @@ func (q *Queries) GetCompetition(ctx context.Context, slug string) (GetCompetiti
 		&i.CountrySlug,
 		&i.Type,
 		&i.Scraped,
+		&i.Logo,
 		&i.Season,
 	)
 	return i, err
@@ -63,7 +65,7 @@ func (q *Queries) LatestSeason(ctx context.Context) (int16, error) {
 }
 
 const listCompetitions = `-- name: ListCompetitions :many
-SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped, coalesce(c.logo_url, '')::text AS logo,
        coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
                  FROM matches m WHERE m.competition_id = c.id),
                  -- seeded tables (SofaScore) have no matches
@@ -82,6 +84,7 @@ type ListCompetitionsRow struct {
 	CountrySlug string
 	Type        string
 	Scraped     bool
+	Logo        string
 	Season      int16
 }
 
@@ -103,6 +106,7 @@ func (q *Queries) ListCompetitions(ctx context.Context) ([]ListCompetitionsRow, 
 			&i.CountrySlug,
 			&i.Type,
 			&i.Scraped,
+			&i.Logo,
 			&i.Season,
 		); err != nil {
 			return nil, err

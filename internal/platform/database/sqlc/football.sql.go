@@ -57,6 +57,40 @@ func (q *Queries) ListActiveCompetitions(ctx context.Context) ([]ListActiveCompe
 	return items, nil
 }
 
+const listCompetitionsMissingLogo = `-- name: ListCompetitionsMissingLogo :many
+SELECT id, slug,
+       coalesce(logo_source_url, 'https://img.sofascore.com/api/v1/unique-tournament/' || sofascore_id || '/image')::text AS logo_source_url
+FROM competitions
+WHERE active AND logo_url IS NULL AND (logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL)
+`
+
+type ListCompetitionsMissingLogoRow struct {
+	ID            pgtype.UUID
+	Slug          string
+	LogoSourceUrl string
+}
+
+// SofaScore competitions' logos sit at a fixed URL by id.
+func (q *Queries) ListCompetitionsMissingLogo(ctx context.Context) ([]ListCompetitionsMissingLogoRow, error) {
+	rows, err := q.db.Query(ctx, listCompetitionsMissingLogo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCompetitionsMissingLogoRow
+	for rows.Next() {
+		var i ListCompetitionsMissingLogoRow
+		if err := rows.Scan(&i.ID, &i.Slug, &i.LogoSourceUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveCandidates = `-- name: ListLiveCandidates :many
 SELECT id, flashscore_id::text AS flashscore_id, home_team_id, away_team_id
 FROM matches
@@ -210,9 +244,9 @@ func (q *Queries) ListSquadsToSync(ctx context.Context, limit int32) ([]ListSqua
 const listTeamsMissingLogo = `-- name: ListTeamsMissingLogo :many
 SELECT id,
        coalesce(flashscore_id, 'ss' || sofascore_id)::text AS flashscore_id,
-       coalesce(logo_source_url, 'https://img.sofascore.com/api/v1/team/' || sofascore_id || '/image')::text AS logo_source_url
+       coalesce(logo_hd_source_url, logo_source_url, 'https://img.sofascore.com/api/v1/team/' || sofascore_id || '/image')::text AS logo_source_url
 FROM teams
-WHERE logo_url IS NULL AND (logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL)
+WHERE logo_url IS NULL AND (logo_hd_source_url IS NOT NULL OR logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL)
 `
 
 type ListTeamsMissingLogoRow struct {
@@ -221,7 +255,8 @@ type ListTeamsMissingLogoRow struct {
 	LogoSourceUrl string
 }
 
-// SofaScore teams' logos sit at a fixed URL by id. An empty logo_url means the source has none (404).
+// The 100x100 logo from the squad page beats the feed's 30x30 icon. SofaScore
+// teams' logos sit at a fixed URL by id. An empty logo_url means the source has none (404).
 func (q *Queries) ListTeamsMissingLogo(ctx context.Context) ([]ListTeamsMissingLogoRow, error) {
 	rows, err := q.db.Query(ctx, listTeamsMissingLogo)
 	if err != nil {
@@ -251,6 +286,38 @@ func (q *Queries) MarkSquadSynced(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const setCompetitionLogo = `-- name: SetCompetitionLogo :exec
+UPDATE competitions SET logo_url = $2 WHERE id = $1
+`
+
+type SetCompetitionLogoParams struct {
+	ID      pgtype.UUID
+	LogoUrl pgtype.Text
+}
+
+func (q *Queries) SetCompetitionLogo(ctx context.Context, arg SetCompetitionLogoParams) error {
+	_, err := q.db.Exec(ctx, setCompetitionLogo, arg.ID, arg.LogoUrl)
+	return err
+}
+
+const setCompetitionLogoSource = `-- name: SetCompetitionLogoSource :exec
+UPDATE competitions
+SET logo_url = CASE WHEN logo_source_url IS DISTINCT FROM $2 THEN NULL ELSE logo_url END,
+    logo_source_url = $2
+WHERE id = $1
+`
+
+type SetCompetitionLogoSourceParams struct {
+	ID            pgtype.UUID
+	LogoSourceUrl pgtype.Text
+}
+
+// The league page heading's logo; a new one clears the stored copy.
+func (q *Queries) SetCompetitionLogoSource(ctx context.Context, arg SetCompetitionLogoSourceParams) error {
+	_, err := q.db.Exec(ctx, setCompetitionLogoSource, arg.ID, arg.LogoSourceUrl)
+	return err
+}
+
 const setCompetitionSplitSeason = `-- name: SetCompetitionSplitSeason :exec
 UPDATE competitions SET split_season = $2 WHERE id = $1 AND split_season IS DISTINCT FROM $2
 `
@@ -262,6 +329,24 @@ type SetCompetitionSplitSeasonParams struct {
 
 func (q *Queries) SetCompetitionSplitSeason(ctx context.Context, arg SetCompetitionSplitSeasonParams) error {
 	_, err := q.db.Exec(ctx, setCompetitionSplitSeason, arg.ID, arg.SplitSeason)
+	return err
+}
+
+const setTeamHDLogo = `-- name: SetTeamHDLogo :exec
+UPDATE teams
+SET logo_url = CASE WHEN logo_hd_source_url IS DISTINCT FROM $2 THEN NULL ELSE logo_url END,
+    logo_hd_source_url = $2
+WHERE id = $1
+`
+
+type SetTeamHDLogoParams struct {
+	ID              pgtype.UUID
+	LogoHdSourceUrl pgtype.Text
+}
+
+// A new 100x100 logo clears the stored copy so the ingestor downloads it.
+func (q *Queries) SetTeamHDLogo(ctx context.Context, arg SetTeamHDLogoParams) error {
+	_, err := q.db.Exec(ctx, setTeamHDLogo, arg.ID, arg.LogoHdSourceUrl)
 	return err
 }
 

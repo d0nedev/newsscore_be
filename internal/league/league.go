@@ -110,6 +110,7 @@ type League struct {
 	CountryID string   `json:"countryId"` // country slug, e.g. "indonesia"
 	Type      string   `json:"type"`
 	Season    int      `json:"season"`
+	Logo      string   `json:"logo,omitempty"`      // "/assets/leagues/<slug>.png"; absent until downloaded or when the source has none
 	Standings *[]Row   `json:"standings,omitempty"` // with tables only; a pointer so cups still send []
 	Groups    *[]Group `json:"groups,omitempty"`    // cups with tables only
 }
@@ -148,7 +149,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) error {
 	out := make([]League, 0, len(rows))
 	for _, c := range rows {
 		if !withTables {
-			out = append(out, League{ID: c.Slug, Name: c.Name, Country: c.Country, CountryID: c.CountrySlug, Type: c.Type, Season: int(c.Season)})
+			out = append(out, League{ID: c.Slug, Name: c.Name, Country: c.Country, CountryID: c.CountrySlug, Type: c.Type, Season: int(c.Season), Logo: c.Logo})
 			continue
 		}
 		// ponytail: one table query per competition; fine for a handful, batch them if the list grows past ~20.
@@ -196,7 +197,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 func withTable(t table) League {
 	c := t.Competition
 	standings := []Row{}
-	out := League{ID: c.Slug, Name: c.Name, Country: c.Country, CountryID: c.CountrySlug, Type: c.Type, Season: int(c.Season), Standings: &standings}
+	out := League{ID: c.Slug, Name: c.Name, Country: c.Country, CountryID: c.CountrySlug, Type: c.Type, Season: int(c.Season), Logo: c.Logo, Standings: &standings}
 	if !c.Scraped {
 		// A seeded table, or none: a national team page holds only our team's
 		// matches, so a table computed from them would be wrong.

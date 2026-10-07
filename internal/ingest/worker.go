@@ -83,13 +83,27 @@ type mirrorItem struct {
 	source string
 }
 
-// syncImages stores team logos and up to photos player photos under assetsDir
-// once, so clients load them from us rather than hotlinking Flashscore or SofaScore.
+// syncImages stores league and team logos and up to photos player photos under
+// assetsDir once, so clients load them from us rather than hotlinking Flashscore or SofaScore.
 func (w *Worker) syncImages(ctx context.Context, photos int32) error {
 	teams, err := w.db.ListTeamsMissingLogo(ctx)
 	if err != nil {
 		return fmt.Errorf("list teams missing logo: %w", err)
 	}
+	leagues, err := w.db.ListCompetitionsMissingLogo(ctx)
+	if err != nil {
+		return fmt.Errorf("list competitions missing logo: %w", err)
+	}
+	items := make([]mirrorItem, 0, len(leagues))
+	for _, c := range leagues {
+		items = append(items, mirrorItem{c.ID, c.Slug, c.LogoSourceUrl})
+	}
+	if err := w.mirror(ctx, "leagues", items, func(id pgtype.UUID, url string) error {
+		return w.db.SetCompetitionLogo(ctx, db.SetCompetitionLogoParams{ID: id, LogoUrl: pgtype.Text{String: url, Valid: true}})
+	}); err != nil {
+		return err
+	}
+
 	logos := make([]mirrorItem, 0, len(teams))
 	for _, t := range teams {
 		logos = append(logos, mirrorItem{t.ID, t.FlashscoreID, t.LogoSourceUrl})
@@ -104,7 +118,7 @@ func (w *Worker) syncImages(ctx context.Context, photos int32) error {
 	if err != nil {
 		return fmt.Errorf("list players missing photo: %w", err)
 	}
-	items := make([]mirrorItem, 0, len(players))
+	items = make([]mirrorItem, 0, len(players))
 	for _, p := range players {
 		items = append(items, mirrorItem{p.ID, p.FlashscoreID, p.PhotoSourceUrl})
 	}
@@ -176,12 +190,18 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetitionsRow) error {
-	matches, teams, split, err := flashscore.ScrapeLeague(c.FlashscorePath)
+	page, err := flashscore.ScrapeLeague(c.FlashscorePath)
 	if err != nil {
 		return fmt.Errorf("scrape %s: %w", c.FlashscorePath, err)
 	}
-	if err := w.db.SetCompetitionSplitSeason(ctx, db.SetCompetitionSplitSeasonParams{ID: c.ID, SplitSeason: split}); err != nil {
+	matches, teams := page.Matches, page.Teams
+	if err := w.db.SetCompetitionSplitSeason(ctx, db.SetCompetitionSplitSeasonParams{ID: c.ID, SplitSeason: page.Split}); err != nil {
 		return err
+	}
+	if page.Logo != "" {
+		if err := w.db.SetCompetitionLogoSource(ctx, db.SetCompetitionLogoSourceParams{ID: c.ID, LogoSourceUrl: optText(page.Logo)}); err != nil {
+			return err
+		}
 	}
 
 	w.logger.Info("competition scraped", slog.String("competition", c.Slug), slog.Int("teams", len(teams)), slog.Int("matches", len(matches)))
@@ -333,8 +353,15 @@ func (w *Worker) syncSquads(ctx context.Context) error {
 		time.Sleep(time.Second)
 
 		path := "/team/" + t.FlashscoreSlug + "/" + t.FlashscoreID + "/squad/"
-		players, err := flashscore.ScrapeSquad(path)
-		if err != nil {
+		players, logo, err := flashscore.ScrapeSquad(path)
+		if logo != "" {
+			if err := w.db.SetTeamHDLogo(ctx, db.SetTeamHDLogoParams{ID: t.ID, LogoHdSourceUrl: optText(logo)}); err != nil {
+				return err
+			}
+		}
+		// An empty squad is marked synced like a full one, so it waits a day: unmarked,
+		// the same empty clubs would head the queue every run and starve the rest.
+		if err != nil && !errors.Is(err, flashscore.ErrNoSquad) {
 			// Not marked synced: retried next run.
 			w.logger.Error("scrape squad failed", slog.String("path", path), slog.Any("error", err))
 			continue

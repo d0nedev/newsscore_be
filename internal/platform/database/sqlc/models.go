@@ -22,6 +22,8 @@ type Competition struct {
 	Scraped        bool
 	SofascoreID    pgtype.Int4
 	SplitSeason    bool
+	LogoSourceUrl  pgtype.Text
+	LogoUrl        pgtype.Text
 }
 
 type CompetitionStanding struct {
@@ -196,17 +198,18 @@ type Session struct {
 }
 
 type Team struct {
-	ID             pgtype.UUID
-	FlashscoreID   pgtype.Text
-	Name           string
-	ShortName      string
-	LogoUrl        pgtype.Text
-	UpdatedAt      pgtype.Timestamptz
-	LogoSourceUrl  pgtype.Text
-	CountryID      pgtype.UUID
-	FlashscoreSlug pgtype.Text
-	SquadSyncedAt  pgtype.Timestamptz
-	SofascoreID    pgtype.Int4
+	ID              pgtype.UUID
+	FlashscoreID    pgtype.Text
+	Name            string
+	ShortName       string
+	LogoUrl         pgtype.Text
+	UpdatedAt       pgtype.Timestamptz
+	LogoSourceUrl   pgtype.Text
+	CountryID       pgtype.UUID
+	FlashscoreSlug  pgtype.Text
+	SquadSyncedAt   pgtype.Timestamptz
+	SofascoreID     pgtype.Int4
+	LogoHdSourceUrl pgtype.Text
 }
 
 type User struct {

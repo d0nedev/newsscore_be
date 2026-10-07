@@ -5,7 +5,7 @@ SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season), 0):
 
 -- name: ListCompetitions :many
 -- Each competition with its latest season (0 until the ingestor has stored a match).
-SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped, coalesce(c.logo_url, '')::text AS logo,
        coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
                  FROM matches m WHERE m.competition_id = c.id),
                  -- seeded tables (SofaScore) have no matches
@@ -16,7 +16,7 @@ WHERE c.active
 ORDER BY n.sort_order, c.sort_order;
 
 -- name: GetCompetition :one
-SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped,
+SELECT c.id, c.slug, c.name, n.name AS country, n.slug AS country_slug, c.type, c.scraped, coalesce(c.logo_url, '')::text AS logo,
        coalesce((SELECT coalesce(max(season) FILTER (WHERE status = 'finished'), max(season))
                  FROM matches m WHERE m.competition_id = c.id),
                  -- seeded tables (SofaScore) have no matches

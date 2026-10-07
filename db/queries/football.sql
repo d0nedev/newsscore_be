@@ -68,12 +68,37 @@ ON CONFLICT (flashscore_path) DO UPDATE SET name = EXCLUDED.name
 RETURNING id;
 
 -- name: ListTeamsMissingLogo :many
--- SofaScore teams' logos sit at a fixed URL by id. An empty logo_url means the source has none (404).
+-- The 100x100 logo from the squad page beats the feed's 30x30 icon. SofaScore
+-- teams' logos sit at a fixed URL by id. An empty logo_url means the source has none (404).
 SELECT id,
        coalesce(flashscore_id, 'ss' || sofascore_id)::text AS flashscore_id,
-       coalesce(logo_source_url, 'https://img.sofascore.com/api/v1/team/' || sofascore_id || '/image')::text AS logo_source_url
+       coalesce(logo_hd_source_url, logo_source_url, 'https://img.sofascore.com/api/v1/team/' || sofascore_id || '/image')::text AS logo_source_url
 FROM teams
-WHERE logo_url IS NULL AND (logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL);
+WHERE logo_url IS NULL AND (logo_hd_source_url IS NOT NULL OR logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL);
+
+-- name: SetTeamHDLogo :exec
+-- A new 100x100 logo clears the stored copy so the ingestor downloads it.
+UPDATE teams
+SET logo_url = CASE WHEN logo_hd_source_url IS DISTINCT FROM $2 THEN NULL ELSE logo_url END,
+    logo_hd_source_url = $2
+WHERE id = $1;
+
+-- name: SetCompetitionLogoSource :exec
+-- The league page heading's logo; a new one clears the stored copy.
+UPDATE competitions
+SET logo_url = CASE WHEN logo_source_url IS DISTINCT FROM $2 THEN NULL ELSE logo_url END,
+    logo_source_url = $2
+WHERE id = $1;
+
+-- name: ListCompetitionsMissingLogo :many
+-- SofaScore competitions' logos sit at a fixed URL by id.
+SELECT id, slug,
+       coalesce(logo_source_url, 'https://img.sofascore.com/api/v1/unique-tournament/' || sofascore_id || '/image')::text AS logo_source_url
+FROM competitions
+WHERE active AND logo_url IS NULL AND (logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL);
+
+-- name: SetCompetitionLogo :exec
+UPDATE competitions SET logo_url = $2 WHERE id = $1;
 
 -- name: SetTeamLogo :exec
 UPDATE teams SET logo_url = $2 WHERE id = $1;

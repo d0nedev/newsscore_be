@@ -213,3 +213,13 @@ func TestSeasonPatternSplit(t *testing.T) {
 		}
 	}
 }
+
+func TestHeadingLogo(t *testing.T) {
+	page := `<div class="heading"><img class="heading__logo heading__logo--1" src="https://static.flashscore.com/res/image/data/QuGrSijl-fXN2TGqm.png" alt="Persib Bandung"></div>`
+	if got, want := headingLogo(page), "https://static.flashscore.com/res/image/data/QuGrSijl-fXN2TGqm.png"; got != want {
+		t.Errorf("headingLogo = %q, want %q", got, want)
+	}
+	if got := headingLogo(`<img class="heading__logo" src="https://evil.example/x.png">`); got != "" {
+		t.Errorf("headingLogo took a foreign host: %q", got)
+	}
+}
