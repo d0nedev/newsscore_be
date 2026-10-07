@@ -18,7 +18,12 @@ tags:
   - name: news
     description: Berita. `/admin/news` needs a session with the admin role.
   - name: leagues
-    description: Competitions (Super League, Championship, Piala Presiden) and tables computed from finished matches.
+    description: |
+      Competitions and their tables. Two sources, one response shape:
+      - Flashscore (Super League, Championship, Piala Presiden, foreign leagues): tables computed from finished matches.
+      - SofaScore (Liga Nusantara `indonesia-liga-3`, EPA `epa-super-league-u20`, Liga Topskor
+        `liga-topskor` (U17), `liga-topskor-u13` … `liga-topskor-u16`): tables as SofaScore publishes them.
+      `GET /leagues` lists every slug.
   - name: teams
     description: Team and player pages, from lineups and incidents of the latest season.
   - name: search
@@ -279,10 +284,15 @@ paths:
       operationId: getLeague
       summary: One competition with its table
       description: |
-        Standings rank by points, goal difference, then goals scored; teams without a
-        finished match appear with zeros. Cups return an empty `standings`.
+        Flashscore competitions: standings rank by points, goal difference, then goals
+        scored; teams without a finished match appear with zeros. Cups return an empty
+        `standings` and their tables in `groups`.
+
+        SofaScore competitions (Liga Topskor, EPA, Liga Nusantara): the tables as SofaScore
+        publishes them, in its order. A competition with one table fills `standings`; one
+        with several fills `groups` (group stage, later rounds, "3rd Place"). `form` is empty.
       parameters:
-        - { name: id, in: path, required: true, description: "Slug, e.g. super-league", schema: { type: string } }
+        - { name: id, in: path, required: true, description: "Slug, e.g. super-league, liga-topskor (U17), liga-topskor-u15", schema: { type: string, example: liga-topskor } }
         - { name: season, in: query, description: Year; defaults to the latest season with a finished match, schema: { type: integer, example: 2026 } }
       responses:
         "200":
@@ -520,9 +530,13 @@ components:
         groups:
           type: array
           description: |
-            Cups only, on GET /leagues/{id}. Groups are derived from who played whom in the
-            group stage (the source does not label them), named A, B, … by their best-ranked
-            team, so the letters may differ from the official draw.
+            On GET /leagues/{id}, for competitions with several tables.
+            Flashscore cups: groups are derived from who played whom in the group stage (the
+            source does not label them), named A, B, … by their best-ranked team, so the
+            letters may differ from the official draw.
+            SofaScore competitions: the source's own tables and names, in its order
+            ("Grup A", "Grup 1", "Second Round, Grup A", "3rd Place"); a team can appear in
+            several, one per stage.
           items:
             type: object
             required: [name, standings]
@@ -725,7 +739,7 @@ components:
         id: { type: string, format: uuid }
         leagueId: { type: string, description: Competition slug }
         league: { type: string }
-        round: { type: string, example: Round 3 }
+        round: { type: string, description: '"Round 3", or a knockout round ("Quarterfinals", "Semifinals", "Final", "Match for 3rd place")', example: Round 3 }
         status: { $ref: "#/components/schemas/MatchStatus" }
         time: { type: string, description: 'Jam kick-off WIB "HH:MM", atau "LIVE"' }
         date: { type: string, description: '"DD.MM.YYYY" (WIB)' }
