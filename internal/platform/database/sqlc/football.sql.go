@@ -208,9 +208,11 @@ func (q *Queries) ListSquadsToSync(ctx context.Context, limit int32) ([]ListSqua
 }
 
 const listTeamsMissingLogo = `-- name: ListTeamsMissingLogo :many
-SELECT id, flashscore_id::text AS flashscore_id, logo_source_url::text AS logo_source_url
+SELECT id,
+       coalesce(flashscore_id, 'ss' || sofascore_id)::text AS flashscore_id,
+       coalesce(logo_source_url, 'https://img.sofascore.com/api/v1/team/' || sofascore_id || '/image')::text AS logo_source_url
 FROM teams
-WHERE logo_url IS NULL AND logo_source_url IS NOT NULL
+WHERE logo_url IS NULL AND (logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL)
 `
 
 type ListTeamsMissingLogoRow struct {
@@ -219,6 +221,7 @@ type ListTeamsMissingLogoRow struct {
 	LogoSourceUrl string
 }
 
+// SofaScore teams' logos sit at a fixed URL by id. An empty logo_url means the source has none (404).
 func (q *Queries) ListTeamsMissingLogo(ctx context.Context) ([]ListTeamsMissingLogoRow, error) {
 	rows, err := q.db.Query(ctx, listTeamsMissingLogo)
 	if err != nil {

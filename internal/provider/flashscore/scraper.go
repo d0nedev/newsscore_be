@@ -209,6 +209,9 @@ const maxImageSize = 2 << 20
 // DownloadImage fetches a PNG/JPEG/WebP image (team logo, player photo) and returns its bytes
 // and file extension. Other content types are refused, so nothing scriptable
 // (SVG, HTML) ends up served from our origin.
+// ErrNoImage is a 404: the source has no picture (most SofaScore youth players).
+var ErrNoImage = errors.New("no image at source")
+
 func DownloadImage(url string) ([]byte, string, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -221,6 +224,9 @@ func DownloadImage(url string) ([]byte, string, error) {
 		return nil, "", err
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil, "", ErrNoImage
+	}
 	if res.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("unexpected status %d", res.StatusCode)
 	}

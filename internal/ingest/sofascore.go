@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -266,6 +267,12 @@ func (w *Worker) BackfillSofascore(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// MirrorAllImages downloads every missing team logo and player photo now,
+// without the ingestor's per-run cap on photos.
+func (w *Worker) MirrorAllImages(ctx context.Context) error {
+	return w.syncImages(ctx, math.MaxInt32)
 }
 
 // syncSofascoreMatch stores a finished match's incidents, lineups with each

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	nethttp "net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,15 +33,44 @@ var client = sync.OnceValues(func() (tls_client.HttpClient, error) {
 		tls_client.WithClientProfile(profiles.Chrome_152), tls_client.WithTimeoutSeconds(30))
 })
 
+// proxy is the base URL of scrap-claude/sofascore_proxy.py; see SetProxy.
+var (
+	proxy       string
+	proxyClient = &nethttp.Client{Timeout: time.Minute} // the browser may reload for a fresh token first
+)
+
+// SetProxy sends every request through a browser that passes SofaScore's
+// captcha (scrap-claude/sofascore_proxy.py), e.g. "http://localhost:8787".
+// SofaScore asks for one from flagged IPs (VPNs, heavy users); empty calls it directly.
+func SetProxy(url string) { proxy = strings.TrimSuffix(url, "/") }
+
 func get(path string, v any) error {
 	time.Sleep(time.Second) // same politeness gap as the Flashscore feeds
-	c, err := client()
+	if proxy != "" {
+		res, err := proxyClient.Get(proxy + "/api/v1" + path)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		return decode(path, res.StatusCode, res.Body, v)
+	}
+	res, err := fetch(base + path)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodGet, base+path, nil)
+	defer res.Body.Close()
+	return decode(path, res.StatusCode, res.Body, v)
+}
+
+// fetch GETs url with Chrome's TLS fingerprint and headers.
+func fetch(url string) (*http.Response, error) {
+	c, err := client()
 	if err != nil {
-		return err
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
 	}
 	req.Header = http.Header{
 		"sec-ch-ua":          {`"Not;A=Brand";v="8", "Chromium";v="152", "Google Chrome";v="152"`},
@@ -52,20 +82,50 @@ func get(path string, v any) error {
 		"accept-language":    {"en-US,en;q=0.9"},
 		http.HeaderOrderKey:  {"sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform", "user-agent", "accept", "accept-encoding", "accept-language"},
 	}
-	res, err := c.Do(req)
+	return c.Do(req)
+}
+
+const maxImageSize = 2 << 20 // same cap as Flashscore logos; real ones are a few KB
+
+// DownloadImage fetches a logo or photo from img.sofascore.com, which has no
+// captcha but answers 403 to Go's own TLS. A 404 (no picture) is ErrNotFound.
+func DownloadImage(url string) ([]byte, string, error) {
+	res, err := fetch(url)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	defer res.Body.Close()
-	switch {
-	case res.StatusCode == http.StatusNotFound:
-		return fmt.Errorf("%w: %s", ErrNotFound, path)
-	case res.StatusCode == http.StatusForbidden || res.StatusCode == http.StatusTooManyRequests:
-		return fmt.Errorf("%w: status %d", ErrBlocked, res.StatusCode)
-	case res.StatusCode != http.StatusOK:
-		return fmt.Errorf("sofascore %s: status %d", path, res.StatusCode)
+	switch res.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return nil, "", fmt.Errorf("%w: %s", ErrNotFound, url)
+	default:
+		return nil, "", fmt.Errorf("sofascore image %s: status %d", url, res.StatusCode)
 	}
-	body, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxImageSize+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(body) > maxImageSize {
+		return nil, "", fmt.Errorf("image larger than %d bytes", maxImageSize)
+	}
+	ext, ok := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[http.DetectContentType(body)]
+	if !ok {
+		return nil, "", fmt.Errorf("not a PNG, JPEG, or WebP image")
+	}
+	return body, ext, nil
+}
+
+func decode(path string, status int, r io.Reader, v any) error {
+	switch {
+	case status == http.StatusNotFound:
+		return fmt.Errorf("%w: %s", ErrNotFound, path)
+	case status == http.StatusForbidden || status == http.StatusTooManyRequests:
+		return fmt.Errorf("%w: status %d", ErrBlocked, status)
+	case status != http.StatusOK:
+		return fmt.Errorf("sofascore %s: status %d", path, status)
+	}
+	body, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}

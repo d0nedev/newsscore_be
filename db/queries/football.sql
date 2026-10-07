@@ -68,9 +68,12 @@ ON CONFLICT (flashscore_path) DO UPDATE SET name = EXCLUDED.name
 RETURNING id;
 
 -- name: ListTeamsMissingLogo :many
-SELECT id, flashscore_id::text AS flashscore_id, logo_source_url::text AS logo_source_url
+-- SofaScore teams' logos sit at a fixed URL by id. An empty logo_url means the source has none (404).
+SELECT id,
+       coalesce(flashscore_id, 'ss' || sofascore_id)::text AS flashscore_id,
+       coalesce(logo_source_url, 'https://img.sofascore.com/api/v1/team/' || sofascore_id || '/image')::text AS logo_source_url
 FROM teams
-WHERE logo_url IS NULL AND logo_source_url IS NOT NULL;
+WHERE logo_url IS NULL AND (logo_source_url IS NOT NULL OR sofascore_id IS NOT NULL);
 
 -- name: SetTeamLogo :exec
 UPDATE teams SET logo_url = $2 WHERE id = $1;

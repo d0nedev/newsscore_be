@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/d0nedev/newsscore/internal/domain"
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
+	"github.com/d0nedev/newsscore/internal/provider/sofascore"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -61,7 +63,7 @@ func (w *Worker) Sync(ctx context.Context) error {
 	if err := w.syncSquads(ctx); err != nil {
 		w.logger.Error("sync squads failed", slog.Any("error", err))
 	}
-	if err := w.syncImages(ctx); err != nil {
+	if err := w.syncImages(ctx, photosPerRun); err != nil {
 		w.logger.Error("sync images failed", slog.Any("error", err))
 	}
 	if err := w.syncSofascore(ctx); err != nil {
@@ -81,9 +83,9 @@ type mirrorItem struct {
 	source string
 }
 
-// syncImages stores team logos and player photos under assetsDir once, so
-// clients load them from us rather than hotlinking Flashscore.
-func (w *Worker) syncImages(ctx context.Context) error {
+// syncImages stores team logos and up to photos player photos under assetsDir
+// once, so clients load them from us rather than hotlinking Flashscore or SofaScore.
+func (w *Worker) syncImages(ctx context.Context, photos int32) error {
 	teams, err := w.db.ListTeamsMissingLogo(ctx)
 	if err != nil {
 		return fmt.Errorf("list teams missing logo: %w", err)
@@ -93,21 +95,21 @@ func (w *Worker) syncImages(ctx context.Context) error {
 		logos = append(logos, mirrorItem{t.ID, t.FlashscoreID, t.LogoSourceUrl})
 	}
 	if err := w.mirror(ctx, "teams", logos, func(id pgtype.UUID, url string) error {
-		return w.db.SetTeamLogo(ctx, db.SetTeamLogoParams{ID: id, LogoUrl: optText(url)})
+		return w.db.SetTeamLogo(ctx, db.SetTeamLogoParams{ID: id, LogoUrl: pgtype.Text{String: url, Valid: true}})
 	}); err != nil {
 		return err
 	}
 
-	players, err := w.db.ListPlayersMissingPhoto(ctx, photosPerRun)
+	players, err := w.db.ListPlayersMissingPhoto(ctx, photos)
 	if err != nil {
 		return fmt.Errorf("list players missing photo: %w", err)
 	}
-	photos := make([]mirrorItem, 0, len(players))
+	items := make([]mirrorItem, 0, len(players))
 	for _, p := range players {
-		photos = append(photos, mirrorItem{p.ID, p.FlashscoreID, p.PhotoSourceUrl})
+		items = append(items, mirrorItem{p.ID, p.FlashscoreID, p.PhotoSourceUrl})
 	}
-	return w.mirror(ctx, "players", photos, func(id pgtype.UUID, url string) error {
-		return w.db.SetPlayerPhoto(ctx, db.SetPlayerPhotoParams{ID: id, PhotoUrl: optText(url)})
+	return w.mirror(ctx, "players", items, func(id pgtype.UUID, url string) error {
+		return w.db.SetPlayerPhoto(ctx, db.SetPlayerPhotoParams{ID: id, PhotoUrl: pgtype.Text{String: url, Valid: true}})
 	})
 }
 
@@ -126,7 +128,18 @@ func (w *Worker) mirror(ctx context.Context, kind string, items []mirrorItem, re
 		}
 		time.Sleep(time.Second)
 
-		body, ext, err := flashscore.DownloadImage(it.source)
+		download := flashscore.DownloadImage
+		if strings.Contains(it.source, "sofascore.com") {
+			download = sofascore.DownloadImage
+		}
+		body, ext, err := download(it.source)
+		if errors.Is(err, flashscore.ErrNoImage) || errors.Is(err, sofascore.ErrNotFound) {
+			// "" records the source has none, so it is not asked again; a new source URL clears it.
+			if err := record(it.id, ""); err != nil {
+				return err
+			}
+			continue
+		}
 		if err != nil {
 			w.logger.Warn("download image failed", slog.String("kind", kind), slog.String("id", it.name), slog.Any("error", err))
 			continue

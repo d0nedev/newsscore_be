@@ -81,6 +81,9 @@ type IngestConfig struct {
 	LiveInterval  time.Duration
 	DetailsPerRun int
 	FSign         string
+	// SofascoreProxy is the base URL of scrap-claude/sofascore_proxy.py (a
+	// browser that passes SofaScore's captcha); empty calls SofaScore directly.
+	SofascoreProxy string
 }
 
 type RateLimitConfig struct {
@@ -177,10 +180,11 @@ func Load() (*Config, error) {
 			RequestsPerMinute: v.GetInt("RATE_LIMIT_REQUESTS_PER_MINUTE"),
 		},
 		Ingest: IngestConfig{
-			Interval:      v.GetDuration("INGEST_INTERVAL"),
-			LiveInterval:  v.GetDuration("INGEST_LIVE_INTERVAL"),
-			DetailsPerRun: v.GetInt("INGEST_DETAILS_PER_RUN"),
-			FSign:         v.GetString("FLASHSCORE_FSIGN"),
+			Interval:       v.GetDuration("INGEST_INTERVAL"),
+			LiveInterval:   v.GetDuration("INGEST_LIVE_INTERVAL"),
+			DetailsPerRun:  v.GetInt("INGEST_DETAILS_PER_RUN"),
+			FSign:          v.GetString("FLASHSCORE_FSIGN"),
+			SofascoreProxy: v.GetString("SOFASCORE_PROXY"),
 		},
 	}
 

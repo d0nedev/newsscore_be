@@ -15,6 +15,7 @@ import (
 	db "github.com/d0nedev/newsscore/internal/platform/database/sqlc"
 	"github.com/d0nedev/newsscore/internal/platform/logging"
 	"github.com/d0nedev/newsscore/internal/provider/flashscore"
+	"github.com/d0nedev/newsscore/internal/provider/sofascore"
 )
 
 // Run exactly one ingestor: two instances would scrape twice and double the block risk.
@@ -46,6 +47,7 @@ func run() int {
 	defer pool.Close()
 
 	flashscore.SetFSign(cfg.Ingest.FSign)
+	sofascore.SetProxy(cfg.Ingest.SofascoreProxy)
 	worker := ingest.NewWorker(db.New(pool), logger, cfg.Ingest.DetailsPerRun, cfg.App.AssetsDir)
 	logger.Info("ingestor started",
 		slog.Duration("interval", cfg.Ingest.Interval),

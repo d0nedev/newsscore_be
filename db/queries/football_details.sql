@@ -48,9 +48,13 @@ SET stats = EXCLUDED.stats,
 SELECT id, flashscore_id::text AS flashscore_id, home_team_id, away_team_id FROM matches WHERE flashscore_id = $1;
 
 -- name: ListPlayersMissingPhoto :many
-SELECT id, flashscore_id::text AS flashscore_id, photo_source_url::text AS photo_source_url
+-- SofaScore players' photos sit at a fixed URL by id; most youth players have none (404),
+-- which an empty photo_url records so they are not asked again.
+SELECT id,
+       coalesce(flashscore_id, 'ss' || sofascore_id)::text AS flashscore_id,
+       coalesce(photo_source_url, 'https://img.sofascore.com/api/v1/player/' || sofascore_id || '/image')::text AS photo_source_url
 FROM players
-WHERE photo_url IS NULL AND photo_source_url IS NOT NULL
+WHERE photo_url IS NULL AND (photo_source_url IS NOT NULL OR sofascore_id IS NOT NULL)
 LIMIT $1;
 
 -- name: SetPlayerPhoto :exec
