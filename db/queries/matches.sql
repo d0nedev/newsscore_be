@@ -24,3 +24,6 @@ FROM match_lineups l
 JOIN players p ON p.id = l.player_id
 WHERE l.match_id = $1
 ORDER BY l.starter DESC, l.shirt_number NULLS LAST, p.name;
+
+-- name: GetMatchFormations :one
+SELECT coalesce(home_formation, '')::text AS home, coalesce(away_formation, '')::text AS away FROM matches WHERE id = $1;

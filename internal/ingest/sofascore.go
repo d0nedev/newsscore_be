@@ -335,6 +335,12 @@ func (w *Worker) syncSofascoreMatch(ctx context.Context, target string) error {
 		}
 	}
 
+	if len(d.Home)+len(d.Away) > 0 {
+		if err := w.setFormations(ctx, m.ID, d.Formations); err != nil {
+			return err
+		}
+	}
+
 	out := make([]statJSON, 0, len(d.Stats))
 	for _, s := range d.Stats {
 		out = append(out, statJSON{Label: s.Name, Home: s.Home, Away: s.Away})

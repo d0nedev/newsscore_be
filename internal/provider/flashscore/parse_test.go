@@ -80,7 +80,11 @@ func TestParseIncidents(t *testing.T) {
 }
 
 func TestParseLineups(t *testing.T) {
-	got := parseLineups(lineupsFeed)
+	lineup := parseLineups(lineupsFeed)
+	if lineup.Formations != [2]string{"4-4-2", "4-2-3-1"} {
+		t.Errorf("formations = %q, want 4-4-2 and 4-2-3-1", lineup.Formations)
+	}
+	got := lineup.Players
 	want := []Player{
 		{FlashscoreID: "Y5cFTU5E", Name: "Chica S.", Nationality: "Spain", ShirtNumber: 44, Team: 1, Starter: true,
 			PhotoURL: "https://static.flashscore.com/res/image/data/0MnIUniA-EHOqXBOi.png"},

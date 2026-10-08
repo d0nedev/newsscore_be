@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,6 +25,9 @@ func main() {
 }
 
 func run() int {
+	backfill := flag.Bool("backfill-formations", false, "read lineups again for matches stored before formations were kept, then exit")
+	flag.Parse()
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load config", slog.Any("error", err))
@@ -49,6 +53,13 @@ func run() int {
 	flashscore.SetFSign(cfg.Ingest.FSign)
 	sofascore.SetProxy(cfg.Ingest.SofascoreProxy)
 	worker := ingest.NewWorker(db.New(pool), logger, cfg.Ingest.DetailsPerRun, cfg.App.AssetsDir)
+	if *backfill {
+		if err := worker.BackfillFormations(ctx); err != nil {
+			logger.Error("backfill formations failed", slog.Any("error", err))
+			return 1
+		}
+		return 0
+	}
 	logger.Info("ingestor started",
 		slog.Duration("interval", cfg.Ingest.Interval),
 		slog.Duration("live_interval", cfg.Ingest.LiveInterval),

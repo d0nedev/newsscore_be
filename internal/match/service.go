@@ -26,7 +26,9 @@ type matchDetail struct {
 	Match   db.MatchRow
 	Events  []db.ListMatchEventsRow
 	Lineups []db.ListMatchLineupsRow
-	Stats   []byte // JSONB array of {label, home, away}; nil when not scraped yet
+	// Formations: home and away, "4-4-2"; "" when unknown.
+	Formations db.GetMatchFormationsRow
+	Stats      []byte // JSONB array of {label, home, away}; nil when not scraped yet
 }
 
 func (s *Service) List(ctx context.Context, f listFilter) ([]db.MatchRow, error) {
@@ -78,5 +80,10 @@ func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (matchDetail, erro
 		return matchDetail{}, tracing.Fail(span, apperror.Internal(CodeMatchQueryFailed, "failed to list lineups", err))
 	}
 
-	return matchDetail{Match: row, Events: events, Lineups: lineups, Stats: stats}, nil
+	formations, err := s.queries.GetMatchFormations(ctx, row.ID)
+	if err != nil {
+		return matchDetail{}, tracing.Fail(span, apperror.Internal(CodeMatchQueryFailed, "failed to get formations", err))
+	}
+
+	return matchDetail{Match: row, Events: events, Lineups: lineups, Formations: formations, Stats: stats}, nil
 }

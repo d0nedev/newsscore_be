@@ -399,10 +399,11 @@ type statJSON struct {
 }
 
 func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscoreIDRow) error {
-	events, stats, players, err := flashscore.ScrapeMatchDetails(m.FlashscoreID)
+	events, stats, lineup, err := flashscore.ScrapeMatchDetails(m.FlashscoreID)
 	if err != nil {
 		return err
 	}
+	players := lineup.Players
 
 	if err := w.saveEvents(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, events); err != nil {
 		return err
@@ -432,6 +433,12 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscore
 		}
 	}
 
+	if len(players) > 0 {
+		if err := w.setFormations(ctx, m.ID, lineup.Formations); err != nil {
+			return err
+		}
+	}
+
 	out := make([]statJSON, 0, len(stats))
 	for _, s := range stats {
 		out = append(out, statJSON{Label: s.Name, Home: s.Home, Away: s.Away})
@@ -443,6 +450,68 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscore
 
 	// Stats go last: their row marks the match as done, so a failure above retries it.
 	return w.db.UpsertMatchStats(ctx, db.UpsertMatchStatsParams{MatchID: m.ID, Stats: raw})
+}
+
+// setFormations stores both sides' formations; "" records that the source gives none.
+func (w *Worker) setFormations(ctx context.Context, match pgtype.UUID, f [2]string) error {
+	return w.db.SetMatchFormations(ctx, db.SetMatchFormationsParams{
+		ID:            match,
+		HomeFormation: pgtype.Text{String: f[0], Valid: true},
+		AwayFormation: pgtype.Text{String: f[1], Valid: true},
+	})
+}
+
+// BackfillFormations reads the lineups feed again for every match whose
+// lineups were stored before formations were kept: one request per match.
+// SofaScore matches need SOFASCORE_PROXY when its API asks for a captcha; if it
+// blocks anyway, they are skipped and Flashscore's carry on.
+func (w *Worker) BackfillFormations(ctx context.Context) error {
+	matches, err := w.db.ListMatchesMissingFormation(ctx)
+	if err != nil {
+		return err
+	}
+	w.logger.Info("formations to fill", slog.Int("matches", len(matches)))
+	sofascoreBlocked := false
+	for i, m := range matches {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var f [2]string
+		switch {
+		case m.SofascoreID != 0:
+			if sofascoreBlocked {
+				continue
+			}
+			l, err := sofascore.MatchLineup(int(m.SofascoreID))
+			if errors.Is(err, sofascore.ErrBlocked) {
+				w.logger.Error("sofascore blocked: skipping its matches", slog.Any("error", err))
+				sofascoreBlocked = true
+				continue
+			}
+			if err != nil {
+				w.logger.Warn("lineup failed", slog.Int("event", int(m.SofascoreID)), slog.Any("error", err))
+				continue
+			}
+			f = l.Formations
+		default:
+			l, err := flashscore.ScrapeLineup(m.FlashscoreID)
+			if errors.Is(err, flashscore.ErrBlocked) {
+				return err
+			}
+			if err != nil {
+				w.logger.Warn("lineup failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
+				continue
+			}
+			f = l.Formations
+		}
+		if err := w.setFormations(ctx, m.ID, f); err != nil {
+			return err
+		}
+		if (i+1)%250 == 0 {
+			w.logger.Info("formations backfill", slog.Int("done", i+1), slog.Int("total", len(matches)))
+		}
+	}
+	return nil
 }
 
 // SyncLive refreshes score, stage, and events of matches in play. It is cheap when

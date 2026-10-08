@@ -34,6 +34,42 @@ func (q *Queries) GetMatchByFlashscoreID(ctx context.Context, flashscoreID pgtyp
 	return i, err
 }
 
+const listMatchesMissingFormation = `-- name: ListMatchesMissingFormation :many
+SELECT m.id, coalesce(m.flashscore_id, '')::text AS flashscore_id, coalesce(m.sofascore_id, 0)::int AS sofascore_id
+FROM matches m
+WHERE m.home_formation IS NULL
+  AND EXISTS (SELECT 1 FROM match_lineups l WHERE l.match_id = m.id)
+ORDER BY m.match_time DESC
+`
+
+type ListMatchesMissingFormationRow struct {
+	ID           pgtype.UUID
+	FlashscoreID string
+	SofascoreID  int32
+}
+
+// Matches with stored lineups whose formations were never read, newest first;
+// for ingestor -backfill-formations.
+func (q *Queries) ListMatchesMissingFormation(ctx context.Context) ([]ListMatchesMissingFormationRow, error) {
+	rows, err := q.db.Query(ctx, listMatchesMissingFormation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMatchesMissingFormationRow
+	for rows.Next() {
+		var i ListMatchesMissingFormationRow
+		if err := rows.Scan(&i.ID, &i.FlashscoreID, &i.SofascoreID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlayersMissingPhoto = `-- name: ListPlayersMissingPhoto :many
 SELECT id,
        coalesce(flashscore_id, 'ss' || sofascore_id)::text AS flashscore_id,
@@ -69,6 +105,21 @@ func (q *Queries) ListPlayersMissingPhoto(ctx context.Context, limit int32) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const setMatchFormations = `-- name: SetMatchFormations :exec
+UPDATE matches SET home_formation = $2, away_formation = $3 WHERE id = $1
+`
+
+type SetMatchFormationsParams struct {
+	ID            pgtype.UUID
+	HomeFormation pgtype.Text
+	AwayFormation pgtype.Text
+}
+
+func (q *Queries) SetMatchFormations(ctx context.Context, arg SetMatchFormationsParams) error {
+	_, err := q.db.Exec(ctx, setMatchFormations, arg.ID, arg.HomeFormation, arg.AwayFormation)
+	return err
 }
 
 const setPlayerPhoto = `-- name: SetPlayerPhoto :exec

@@ -45,6 +45,22 @@ func (q *Queries) GetMatch(ctx context.Context, id pgtype.UUID) (MatchRow, error
 	return i, err
 }
 
+const getMatchFormations = `-- name: GetMatchFormations :one
+SELECT coalesce(home_formation, '')::text AS home, coalesce(away_formation, '')::text AS away FROM matches WHERE id = $1
+`
+
+type GetMatchFormationsRow struct {
+	Home string
+	Away string
+}
+
+func (q *Queries) GetMatchFormations(ctx context.Context, id pgtype.UUID) (GetMatchFormationsRow, error) {
+	row := q.db.QueryRow(ctx, getMatchFormations, id)
+	var i GetMatchFormationsRow
+	err := row.Scan(&i.Home, &i.Away)
+	return i, err
+}
+
 const getMatchStats = `-- name: GetMatchStats :one
 SELECT stats FROM match_statistics WHERE match_id = $1
 `

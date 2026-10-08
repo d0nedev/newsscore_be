@@ -92,6 +92,8 @@ type Match struct {
 	Round          pgtype.Text
 	Phase          pgtype.Text
 	SofascoreID    pgtype.Int4
+	HomeFormation  pgtype.Text
+	AwayFormation  pgtype.Text
 }
 
 type MatchEvent struct {

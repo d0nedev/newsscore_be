@@ -59,3 +59,15 @@ LIMIT $1;
 
 -- name: SetPlayerPhoto :exec
 UPDATE players SET photo_url = $2 WHERE id = $1;
+
+-- name: SetMatchFormations :exec
+UPDATE matches SET home_formation = $2, away_formation = $3 WHERE id = $1;
+
+-- name: ListMatchesMissingFormation :many
+-- Matches with stored lineups whose formations were never read, newest first;
+-- for ingestor -backfill-formations.
+SELECT m.id, coalesce(m.flashscore_id, '')::text AS flashscore_id, coalesce(m.sofascore_id, 0)::int AS sofascore_id
+FROM matches m
+WHERE m.home_formation IS NULL
+  AND EXISTS (SELECT 1 FROM match_lineups l WHERE l.match_id = m.id)
+ORDER BY m.match_time DESC;

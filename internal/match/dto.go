@@ -126,8 +126,10 @@ type LineupPlayer struct {
 }
 
 type Lineups struct {
-	Home []LineupPlayer `json:"home"`
-	Away []LineupPlayer `json:"away"`
+	Home          []LineupPlayer `json:"home"`
+	Away          []LineupPlayer `json:"away"`
+	HomeFormation string         `json:"homeFormation,omitempty"` // "4-4-2"
+	AwayFormation string         `json:"awayFormation,omitempty"`
 }
 
 type MatchDetailResponse struct {
@@ -208,7 +210,7 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 		MatchResponse: ToMatchResponse(d.Match),
 		Events:        make([]EventResponse, 0, len(d.Events)),
 		Stats:         json.RawMessage(`[]`),
-		Lineups:       Lineups{Home: []LineupPlayer{}, Away: []LineupPlayer{}},
+		Lineups:       Lineups{Home: []LineupPlayer{}, Away: []LineupPlayer{}, HomeFormation: d.Formations.Home, AwayFormation: d.Formations.Away},
 	}
 	for _, l := range d.Lineups {
 		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter, Photo: l.PhotoUrl.String}

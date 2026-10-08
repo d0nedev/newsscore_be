@@ -800,6 +800,8 @@ components:
               properties:
                 home: { type: array, items: { $ref: "#/components/schemas/LineupPlayer" } }
                 away: { type: array, items: { $ref: "#/components/schemas/LineupPlayer" } }
+                homeFormation: { type: string, description: Absent when the source gives none, example: 4-4-2 }
+                awayFormation: { type: string, description: Absent when the source gives none, example: 4-3-3 }
             stats:
               type: array
               items:

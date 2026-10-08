@@ -85,7 +85,13 @@ type Player struct {
 	Goalkeeper   bool
 }
 
-func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, error) {
+// Lineup is both teams' players and formations ("4-4-2"; "" when the feed has none).
+type Lineup struct {
+	Players    []Player
+	Formations [2]string // home, away
+}
+
+func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, Lineup, error) {
 	// 1. Stats
 	statsRec, statsErr := fetchFeed("df_st_1", matchID)
 	var stats []MatchStat
@@ -105,17 +111,23 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, []Player, er
 	events, eventsErr := ScrapeEvents(matchID)
 
 	// 3. Lineups
-	var players []Player
-	if body, err := fetchBody("df_li_1", matchID); err == nil {
-		players = parseLineups(body)
-	}
+	lineup, _ := ScrapeLineup(matchID)
 
 	// Only fail when nothing usable came back; lineups alone are not worth saving.
 	if statsErr != nil && eventsErr != nil {
-		return nil, nil, nil, fmt.Errorf("stats: %w; events: %w", statsErr, eventsErr)
+		return nil, nil, Lineup{}, fmt.Errorf("stats: %w; events: %w", statsErr, eventsErr)
 	}
 
-	return events, stats, players, nil
+	return events, stats, lineup, nil
+}
+
+// ScrapeLineup reads only the lineups feed: players and formations, one request.
+func ScrapeLineup(matchID string) (Lineup, error) {
+	body, err := fetchBody("df_li_1", matchID)
+	if err != nil {
+		return Lineup{}, err
+	}
+	return parseLineups(body), nil
 }
 
 // ScrapeEvents reads the match incidents feed (goals, cards, substitutions).
@@ -196,9 +208,10 @@ func parseIncidents(body string) []MatchEvent {
 }
 
 // parseLineups reads df_li records: "LB" opens a section (Starting Lineups,
-// Substitutes, Coaches), "LC" switches team side, "LP" is a player.
-func parseLineups(body string) []Player {
-	var players []Player
+// Substitutes, Coaches), "LC" switches team side, "LP" is a player, and "LD"
+// the side's formation with the goalkeeper first ("1-4-4-2").
+func parseLineups(body string) Lineup {
+	var out Lineup
 	section, side := "", 1
 	for _, m := range parseRecords(body) {
 		if v, ok := m["LB"]; ok {
@@ -210,12 +223,15 @@ func parseLineups(body string) []Player {
 				side = 2
 			}
 		}
+		if v, ok := m["LD"]; ok {
+			out.Formations[side-1] = strings.TrimPrefix(v, "1-")
+		}
 		id, ok := m["LP"]
 		if !ok || (section != "Starting Lineups" && section != "Substitutes") {
 			continue
 		}
 		number, _ := strconv.Atoi(m["LJ"])
-		players = append(players, Player{
+		out.Players = append(out.Players, Player{
 			FlashscoreID: id,
 			Name:         m["LI"],
 			Nationality:  m["LQ"],
@@ -226,7 +242,7 @@ func parseLineups(body string) []Player {
 			PhotoURL:     imageURL(m["LPX"]), // 108x108; LPI and LPL are smaller cuts
 		})
 	}
-	return players
+	return out
 }
 
 // LiveState is the small "dc_1" core feed: status, stage, and score of one match.

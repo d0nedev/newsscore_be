@@ -423,9 +423,27 @@ type Stat struct {
 // Details is what a finished match's page shows: incidents, both lineups, and team statistics.
 type Details struct {
 	Incidents []Incident
-	Home      []LineupPlayer
-	Away      []LineupPlayer
-	Stats     []Stat // whole match; empty when SofaScore has none
+	Lineup
+	Stats []Stat // whole match; empty when SofaScore has none
+}
+
+// Lineup is both teams' players and formations ("4-3-3"; "" when none is given).
+type Lineup struct {
+	Home, Away []LineupPlayer
+	Formations [2]string // home, away
+}
+
+// MatchLineup reads a match's lineups only, one request; a 404 is an empty Lineup.
+func MatchLineup(event int) (Lineup, error) {
+	type side struct {
+		Formation string         `json:"formation"`
+		Players   []LineupPlayer `json:"players"`
+	}
+	var out struct{ Home, Away side }
+	if err := get(fmt.Sprintf("/event/%d/lineups", event), &out); err != nil && !errors.Is(err, ErrNotFound) {
+		return Lineup{}, err
+	}
+	return Lineup{Home: out.Home.Players, Away: out.Away.Players, Formations: [2]string{out.Home.Formation, out.Away.Formation}}, nil
 }
 
 // MatchDetails reads a match's incidents, lineups, and statistics. Lineups and
@@ -440,18 +458,11 @@ func MatchDetails(event int) (Details, error) {
 	}
 	d.Incidents = inc.Incidents
 
-	var lineups struct {
-		Home struct {
-			Players []LineupPlayer `json:"players"`
-		} `json:"home"`
-		Away struct {
-			Players []LineupPlayer `json:"players"`
-		} `json:"away"`
-	}
-	if err := get(fmt.Sprintf("/event/%d/lineups", event), &lineups); err != nil && !errors.Is(err, ErrNotFound) {
+	lineup, err := MatchLineup(event)
+	if err != nil {
 		return d, err
 	}
-	d.Home, d.Away = lineups.Home.Players, lineups.Away.Players
+	d.Lineup = lineup
 
 	var stats struct {
 		Statistics []struct {
