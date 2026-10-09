@@ -308,6 +308,32 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /api/v1/leagues/{id}/top-players:
+    get:
+      tags: [leagues]
+      operationId: getLeagueTopPlayers
+      summary: A season's leaderboards (top scorers, cards, ...)
+      description: |
+        As SofaScore ranks them, so only SofaScore competitions (Liga Topskor, EPA, Liga
+        Nusantara) have data; others return no categories. Categories are SofaScore's
+        keys in alphabetical order, players best first.
+      parameters:
+        - { name: id, in: path, required: true, description: "Slug, e.g. liga-topskor", schema: { type: string, example: liga-topskor } }
+        - { name: season, in: query, description: Year; defaults to the competition's latest season, schema: { type: integer, example: 2026 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: "#/components/schemas/TopPlayers" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /api/v1/teams/{id}:
     get:
       tags: [teams]
@@ -582,6 +608,8 @@ components:
         position: { type: string }
         country: { type: string }
         photo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
+        birthDate: { type: string, format: date, description: Absent when unknown }
+        heightCm: { type: integer, description: Absent when unknown }
         team:
           type: [object, "null"]
           properties:
@@ -723,6 +751,36 @@ components:
         badge: { type: string, description: 'Kode singkat, mis. "PER"' }
         logo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
 
+    TopPlayers:
+      type: object
+      required: [leagueId, season, categories]
+      properties:
+        leagueId: { type: string }
+        season: { type: integer }
+        categories:
+          type: array
+          items:
+            type: object
+            required: [category, players]
+            properties:
+              category: { type: string, description: "SofaScore's key", examples: [goals, assists, redCards, rating] }
+              players:
+                type: array
+                items:
+                  type: object
+                  required: [rank, playerId, name, value]
+                  properties:
+                    rank: { type: integer }
+                    playerId: { type: string, format: uuid }
+                    name: { type: string }
+                    photo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
+                    teamId: { type: string, format: uuid }
+                    team: { type: string }
+                    badge: { type: string }
+                    logo: { type: string, description: "Local path under /assets/; prefix the API base URL" }
+                    value: { type: number, description: "The category's number: goals, cards, a rating like 7.12" }
+                    appearances: { type: integer }
+
     LineupPlayer:
       type: object
       required: [playerId, name, starter]
@@ -732,6 +790,14 @@ components:
         number: { type: integer }
         starter: { type: boolean }
         photo: { type: string }
+        stats:
+          type: object
+          additionalProperties: true
+          description: |
+            The player's numbers in this match as SofaScore sends them; absent for Flashscore
+            matches. Keys vary by competition: Liga Topskor has goals, ownGoals, totalShots;
+            big leagues add rating, minutesPlayed, totalPass, accuratePass, expectedAssists, ...
+          example: { goals: 1, ownGoals: 0, totalShots: 3 }
 
     Match:
       type: object

@@ -124,3 +124,14 @@ WHERE m.status = 'finished'
   AND m.sofascore_id IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
 ORDER BY m.match_time DESC;
+
+-- name: ListTopPlayers :many
+-- A season's leaderboards as SofaScore ranks them, one row per category and rank.
+SELECT tp.category, tp.rank, tp.value::float8 AS value, tp.appearances,
+       p.id AS player_id, p.name AS player_name, p.photo_url,
+       t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name, t.logo_url AS team_logo_url
+FROM competition_top_players tp
+JOIN players p ON p.id = tp.player_id
+LEFT JOIN teams t ON t.id = tp.team_id
+WHERE tp.competition_id = $1 AND tp.season = $2
+ORDER BY tp.category, tp.rank;

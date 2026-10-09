@@ -318,6 +318,69 @@ func (q *Queries) ListStandingSnapshot(ctx context.Context, arg ListStandingSnap
 	return items, nil
 }
 
+const listTopPlayers = `-- name: ListTopPlayers :many
+SELECT tp.category, tp.rank, tp.value::float8 AS value, tp.appearances,
+       p.id AS player_id, p.name AS player_name, p.photo_url,
+       t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name, t.logo_url AS team_logo_url
+FROM competition_top_players tp
+JOIN players p ON p.id = tp.player_id
+LEFT JOIN teams t ON t.id = tp.team_id
+WHERE tp.competition_id = $1 AND tp.season = $2
+ORDER BY tp.category, tp.rank
+`
+
+type ListTopPlayersParams struct {
+	CompetitionID pgtype.UUID
+	Season        int16
+}
+
+type ListTopPlayersRow struct {
+	Category      string
+	Rank          int16
+	Value         float64
+	Appearances   pgtype.Int2
+	PlayerID      pgtype.UUID
+	PlayerName    string
+	PhotoUrl      pgtype.Text
+	TeamID        pgtype.UUID
+	TeamName      pgtype.Text
+	TeamShortName pgtype.Text
+	TeamLogoUrl   pgtype.Text
+}
+
+// A season's leaderboards as SofaScore ranks them, one row per category and rank.
+func (q *Queries) ListTopPlayers(ctx context.Context, arg ListTopPlayersParams) ([]ListTopPlayersRow, error) {
+	rows, err := q.db.Query(ctx, listTopPlayers, arg.CompetitionID, arg.Season)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTopPlayersRow
+	for rows.Next() {
+		var i ListTopPlayersRow
+		if err := rows.Scan(
+			&i.Category,
+			&i.Rank,
+			&i.Value,
+			&i.Appearances,
+			&i.PlayerID,
+			&i.PlayerName,
+			&i.PhotoUrl,
+			&i.TeamID,
+			&i.TeamName,
+			&i.TeamShortName,
+			&i.TeamLogoUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertSofascoreCompetition = `-- name: UpsertSofascoreCompetition :one
 
 INSERT INTO competitions (slug, name, country_id, type, sofascore_id, scraped, sort_order)

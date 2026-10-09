@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"time"
 	"uuid"
 
 	"github.com/d0nedev/newsscore/internal/domain"
@@ -144,7 +145,9 @@ type Profile struct {
 	Number   int          `json:"number,omitempty"`
 	Position string       `json:"position,omitempty"`
 	Country  string       `json:"country,omitempty"`
-	Photo    string       `json:"photo,omitempty"` // local /assets path
+	Photo    string       `json:"photo,omitempty"`     // local /assets path
+	Born     string       `json:"birthDate,omitempty"` // YYYY-MM-DD
+	Height   int          `json:"heightCm,omitempty"`
 	Team     *Team        `json:"team"`
 	Season   SeasonTotals `json:"season"`
 	// Competitions splits the season totals per competition, in match-log order.
@@ -174,6 +177,10 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) error {
 		Competitions: []CompetitionTotals{},
 		MatchLog:     make([]MatchLogEntry, 0, len(log)),
 	}
+	if p.BirthDate.Valid {
+		out.Born = p.BirthDate.Time.Format(time.DateOnly)
+	}
+	out.Height = int(p.HeightCm.Int16)
 	if p.TeamID.Valid {
 		out.Team = &Team{ID: p.TeamID.String(), Name: p.TeamName.String, Badge: p.TeamShortName.String, Logo: p.TeamLogoUrl.String}
 	}

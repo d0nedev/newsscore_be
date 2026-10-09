@@ -13,6 +13,7 @@ import (
 
 const getPlayer = `-- name: GetPlayer :one
 SELECT p.id, coalesce(p.flashscore_id, '') AS flashscore_id, coalesce(p.sofascore_id, 0)::int AS sofascore_id, p.name, p.shirt_number, p.position, p.nationality, p.photo_url,
+       p.birth_date, p.height_cm,
        t.id AS team_id, t.name AS team_name, t.short_name AS team_short_name, t.logo_url AS team_logo_url
 FROM players p
 LEFT JOIN teams t ON t.id = p.team_id
@@ -28,6 +29,8 @@ type GetPlayerRow struct {
 	Position      pgtype.Text
 	Nationality   pgtype.Text
 	PhotoUrl      pgtype.Text
+	BirthDate     pgtype.Date
+	HeightCm      pgtype.Int2
 	TeamID        pgtype.UUID
 	TeamName      pgtype.Text
 	TeamShortName pgtype.Text
@@ -46,6 +49,8 @@ func (q *Queries) GetPlayer(ctx context.Context, id pgtype.UUID) (GetPlayerRow, 
 		&i.Position,
 		&i.Nationality,
 		&i.PhotoUrl,
+		&i.BirthDate,
+		&i.HeightCm,
 		&i.TeamID,
 		&i.TeamName,
 		&i.TeamShortName,

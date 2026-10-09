@@ -123,6 +123,9 @@ type LineupPlayer struct {
 	Number   int    `json:"number,omitempty"`
 	Starter  bool   `json:"starter"`
 	Photo    string `json:"photo,omitempty"`
+	// Stats are the player's numbers in this match as SofaScore sends them
+	// (rating, minutesPlayed, goals, totalPass, ...); absent for Flashscore matches.
+	Stats json.RawMessage `json:"stats,omitempty"`
 }
 
 type Lineups struct {
@@ -213,7 +216,7 @@ func toMatchDetailResponse(d matchDetail) MatchDetailResponse {
 		Lineups:       Lineups{Home: []LineupPlayer{}, Away: []LineupPlayer{}, HomeFormation: d.Formations.Home, AwayFormation: d.Formations.Away},
 	}
 	for _, l := range d.Lineups {
-		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter, Photo: l.PhotoUrl.String}
+		p := LineupPlayer{PlayerID: l.ID.String(), Name: l.Name, Number: int(l.ShirtNumber.Int16), Starter: l.Starter, Photo: l.PhotoUrl.String, Stats: l.Stats}
 		if l.TeamID == d.Match.HomeTeamID {
 			resp.Lineups.Home = append(resp.Lineups.Home, p)
 		} else {

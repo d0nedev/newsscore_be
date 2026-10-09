@@ -100,6 +100,7 @@ func NewHandler(service *Service) *Handler {
 func RegisterRoutes(r chi.Router, h *Handler, logger *slog.Logger) {
 	r.Get("/leagues", httpx.Handle(logger, h.List))
 	r.Get("/leagues/{slug}", httpx.Handle(logger, h.Get))
+	r.Get("/leagues/{slug}/top-players", httpx.Handle(logger, h.TopPlayers))
 }
 
 // League follows the contract: id is the slug. Cups send an empty standings and one table per group.
@@ -161,6 +162,67 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) error {
 	}
 	return httpx.WriteJSON(w, http.StatusOK, struct {
 		Data []League `json:"data"`
+	}{out})
+}
+
+// TopPlayers are a season's leaderboards; SofaScore competitions only so far.
+type TopPlayers struct {
+	LeagueID   string        `json:"leagueId"`
+	Season     int           `json:"season"`
+	Categories []TopCategory `json:"categories"`
+}
+
+type TopCategory struct {
+	Category string      `json:"category"` // SofaScore's key: goals, assists, redCards, rating, ...
+	Players  []TopPlayer `json:"players"`
+}
+
+type TopPlayer struct {
+	Rank        int     `json:"rank"`
+	PlayerID    string  `json:"playerId"`
+	Name        string  `json:"name"`
+	Photo       string  `json:"photo,omitempty"`
+	TeamID      string  `json:"teamId,omitempty"`
+	Team        string  `json:"team,omitempty"`
+	Badge       string  `json:"badge,omitempty"`
+	Logo        string  `json:"logo,omitempty"`
+	Value       float64 `json:"value"`
+	Appearances int     `json:"appearances,omitempty"`
+}
+
+func (h *Handler) TopPlayers(w http.ResponseWriter, r *http.Request) error {
+	season, err := ParseSeason(r)
+	if err != nil {
+		return err
+	}
+	slug := chi.URLParam(r, "slug")
+	competition, season, err := Scope(r.Context(), h.service.queries, slug, season)
+	if err != nil {
+		return err
+	}
+	rows, err := h.service.queries.ListTopPlayers(r.Context(), db.ListTopPlayersParams{CompetitionID: competition, Season: season})
+	if err != nil {
+		return apperror.Internal(CodeLeagueQueryFailed, "failed to list top players", err)
+	}
+
+	out := TopPlayers{LeagueID: slug, Season: int(season), Categories: []TopCategory{}}
+	for _, row := range rows {
+		if n := len(out.Categories); n == 0 || out.Categories[n-1].Category != row.Category {
+			out.Categories = append(out.Categories, TopCategory{Category: row.Category, Players: []TopPlayer{}})
+		}
+		c := &out.Categories[len(out.Categories)-1]
+		p := TopPlayer{
+			Rank: int(row.Rank), PlayerID: row.PlayerID.String(), Name: row.PlayerName, Photo: row.PhotoUrl.String,
+			Team: row.TeamName.String, Badge: row.TeamShortName.String, Logo: row.TeamLogoUrl.String,
+			Value: row.Value, Appearances: int(row.Appearances.Int16),
+		}
+		if row.TeamID.Valid {
+			p.TeamID = row.TeamID.String()
+		}
+		c.Players = append(c.Players, p)
+	}
+	return httpx.WriteJSON(w, http.StatusOK, struct {
+		Data TopPlayers `json:"data"`
 	}{out})
 }
 

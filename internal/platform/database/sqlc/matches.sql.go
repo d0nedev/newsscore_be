@@ -114,7 +114,7 @@ func (q *Queries) ListMatchEvents(ctx context.Context, matchID pgtype.UUID) ([]L
 }
 
 const listMatchLineups = `-- name: ListMatchLineups :many
-SELECT p.id, p.name, p.photo_url, l.shirt_number, l.starter, l.team_id
+SELECT p.id, p.name, p.photo_url, l.shirt_number, l.starter, l.team_id, l.stats
 FROM match_lineups l
 JOIN players p ON p.id = l.player_id
 WHERE l.match_id = $1
@@ -128,6 +128,7 @@ type ListMatchLineupsRow struct {
 	ShirtNumber pgtype.Int2
 	Starter     bool
 	TeamID      pgtype.UUID
+	Stats       []byte
 }
 
 func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]ListMatchLineupsRow, error) {
@@ -146,6 +147,7 @@ func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]
 			&i.ShirtNumber,
 			&i.Starter,
 			&i.TeamID,
+			&i.Stats,
 		); err != nil {
 			return nil, err
 		}
