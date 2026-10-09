@@ -794,9 +794,10 @@ components:
           type: object
           additionalProperties: true
           description: |
-            The player's numbers in this match as SofaScore sends them; absent for Flashscore
-            matches. Keys vary by competition: Liga Topskor has goals, ownGoals, totalShots;
-            big leagues add rating, minutesPlayed, totalPass, accuratePass, expectedAssists, ...
+            The player's numbers in this match as SofaScore sends them. Today only Liga Topskor
+            has them, and only goals, ownGoals, totalShots (no rating); EPA and Liga Nusantara
+            have no lineups and Flashscore matches no player stats, so the field is absent there.
+            Build columns from the keys present rather than a fixed list.
           example: { goals: 1, ownGoals: 0, totalShots: 3 }
 
     Match:

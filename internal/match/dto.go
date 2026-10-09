@@ -123,8 +123,8 @@ type LineupPlayer struct {
 	Number   int    `json:"number,omitempty"`
 	Starter  bool   `json:"starter"`
 	Photo    string `json:"photo,omitempty"`
-	// Stats are the player's numbers in this match as SofaScore sends them
-	// (rating, minutesPlayed, goals, totalPass, ...); absent for Flashscore matches.
+	// Stats are the player's numbers in this match as SofaScore sends them; today
+	// only Liga Topskor's goals, ownGoals, totalShots. Absent for Flashscore matches.
 	Stats json.RawMessage `json:"stats,omitempty"`
 }
 
