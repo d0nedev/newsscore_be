@@ -412,19 +412,21 @@ func (q *Queries) UpsertSofascoreCompetition(ctx context.Context, arg UpsertSofa
 }
 
 const upsertSofascoreLineup = `-- name: UpsertSofascoreLineup :exec
-INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter, stats)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter, stats, formation_place)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (match_id, player_id) DO UPDATE
-SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter, stats = EXCLUDED.stats
+SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter,
+    stats = EXCLUDED.stats, formation_place = EXCLUDED.formation_place
 `
 
 type UpsertSofascoreLineupParams struct {
-	MatchID     pgtype.UUID
-	PlayerID    pgtype.UUID
-	TeamID      pgtype.UUID
-	ShirtNumber pgtype.Int2
-	Starter     bool
-	Stats       []byte
+	MatchID        pgtype.UUID
+	PlayerID       pgtype.UUID
+	TeamID         pgtype.UUID
+	ShirtNumber    pgtype.Int2
+	Starter        bool
+	Stats          []byte
+	FormationPlace pgtype.Int2
 }
 
 func (q *Queries) UpsertSofascoreLineup(ctx context.Context, arg UpsertSofascoreLineupParams) error {
@@ -435,6 +437,7 @@ func (q *Queries) UpsertSofascoreLineup(ctx context.Context, arg UpsertSofascore
 		arg.ShirtNumber,
 		arg.Starter,
 		arg.Stats,
+		arg.FormationPlace,
 	)
 	return err
 }

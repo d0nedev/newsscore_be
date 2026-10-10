@@ -35,12 +35,14 @@ type League struct {
 	Teams   []domain.Team
 	Split   bool   // the season spans two years ("2026/2027") rather than one ("2026")
 	Logo    string // 100x100, "" if the heading has none
+	// MoreErr: the "show more" pages failed partway; Matches still holds the rest.
+	MoreErr error
 }
 
 // ScrapeLeague reads fixtures (scheduled and live) and results of one competition
-// page, e.g. path "/football/indonesia/super-league/", from one page load.
-// Each feed holds at most 100 matches: team pages (ScrapeTeam) fill the rest.
-func ScrapeLeague(path string) (League, error) {
+// page, e.g. path "/football/indonesia/super-league/". The page embeds at most 100
+// of each; more also reads the rest of the season from the "show more" feeds.
+func ScrapeLeague(path string, more bool) (League, error) {
 	html, err := fetchPage(path)
 	if err != nil {
 		return League{}, err
@@ -52,11 +54,21 @@ func ScrapeLeague(path string) (League, error) {
 	}
 	season, _ := strconv.Atoi(found[1])
 
-	matches, teams, err := parseFeeds(html)
+	teamsMap := make(map[string]domain.Team)
+	matches, err := parseEmbeddedFeeds(html, teamsMap)
+	if err != nil {
+		return League{}, err
+	}
+	var moreErr error
+	if more {
+		var extra []domain.Match
+		extra, moreErr = moreMatches(html, teamsMap)
+		matches = append(matches, extra...)
+	}
 	for i := range matches {
 		matches[i].Season = season
 	}
-	return League{Matches: matches, Teams: teams, Split: found[2] != "", Logo: headingLogo(html)}, err
+	return League{Matches: matches, Teams: teamList(teamsMap), Split: found[2] != "", Logo: headingLogo(html), MoreErr: moreErr}, nil
 }
 
 var headingLogoPattern = regexp.MustCompile(`class="heading__logo[^"]*" src="(https://static\.flashscore\.com/[^"]+)"`)
@@ -135,42 +147,91 @@ func checkStatus(code int) error {
 
 // parseFeeds reads the fixtures and results feeds embedded in a page.
 func parseFeeds(html string) ([]domain.Match, []domain.Team, error) {
-	teamsMap := make(map[string]domain.Team)
-	var matches []domain.Match
+	teams := make(map[string]domain.Team)
+	matches, err := parseEmbeddedFeeds(html, teams)
+	return matches, teamList(teams), err
+}
 
+func parseEmbeddedFeeds(html string, teams map[string]domain.Team) ([]domain.Match, error) {
+	var matches []domain.Match
 	for name, re := range feedPatterns {
 		found := re.FindStringSubmatch(html)
 		if len(found) < 2 {
-			return nil, nil, fmt.Errorf("initialFeeds['%s'] not found", name)
+			return nil, fmt.Errorf("initialFeeds['%s'] not found", name)
 		}
+		matches = append(matches, parseFeed(found[1], teams)...)
+	}
+	return matches, nil
+}
 
-		phase, competition := "", domain.Competition{}
-		for _, m := range parseRecords(found[1]) {
-			// A "ZA" record opens a section, e.g. "INDONESIA: President Cup - Play Offs",
-			// with the competition name (ZK), page (ZL), and region or country (ZY).
-			if header, ok := m["ZA"]; ok {
-				phase = sectionPhase(header)
-				competition = domain.Competition{Name: m["ZK"], Path: m["ZL"], Region: m["ZY"]}
-				continue
+// parseFeed reads one fixtures or results feed, embedded in a page or fetched
+// as a "show more" page, adding its teams to teams.
+func parseFeed(data string, teams map[string]domain.Team) []domain.Match {
+	var matches []domain.Match
+	phase, competition := "", domain.Competition{}
+	for _, m := range parseRecords(data) {
+		// A "ZA" record opens a section, e.g. "INDONESIA: President Cup - Play Offs",
+		// with the competition name (ZK), page (ZL), and region or country (ZY).
+		if header, ok := m["ZA"]; ok {
+			phase = sectionPhase(header)
+			competition = domain.Competition{Name: m["ZK"], Path: m["ZL"], Region: m["ZY"]}
+			continue
+		}
+		match, home, away, ok := parseMatch(m)
+		if !ok {
+			continue
+		}
+		match.Phase = phase
+		match.Competition = competition
+		teams[home.FlashscoreID] = home
+		teams[away.FlashscoreID] = away
+		matches = append(matches, match)
+	}
+	return matches
+}
+
+func teamList(teams map[string]domain.Team) []domain.Team {
+	out := make([]domain.Team, 0, len(teams))
+	for _, t := range teams {
+		out = append(out, t)
+	}
+	return out
+}
+
+var (
+	pageCountryPattern    = regexp.MustCompile(`country_id = (\d+)`)
+	pageTournamentPattern = regexp.MustCompile(`tournament_id = "([A-Za-z0-9]+)"`)
+	pageSeasonPattern     = regexp.MustCompile(`seasonId: (\d+)`)
+)
+
+// maxMorePages caps each "show more" walk; a 38-round league needs 3 pages of 100.
+const maxMorePages = 10
+
+// moreMatches reads the matches past the 100 fixtures and 100 results a league
+// page embeds: the "Show more matches" feeds, tf_ (fixtures) and tr_ (results),
+// page by page until one comes back empty. Team pages carry the same matches
+// but without the round.
+func moreMatches(html string, teams map[string]domain.Team) ([]domain.Match, error) {
+	country, tournament, season := pageCountryPattern.FindStringSubmatch(html), pageTournamentPattern.FindStringSubmatch(html), pageSeasonPattern.FindStringSubmatch(html)
+	if country == nil || tournament == nil || season == nil {
+		return nil, fmt.Errorf("tournament ids not found in page")
+	}
+	var matches []domain.Match
+	for _, kind := range []string{"tf", "tr"} {
+		for page := 1; page <= maxMorePages; page++ {
+			feed := fmt.Sprintf("%s_1_%s_%s_%s", kind, country[1], tournament[1], season[1])
+			body, err := fetchBody(feed, fmt.Sprintf("%d_7_en_1", page))
+			if err != nil {
+				return matches, fmt.Errorf("%s page %d: %w", kind, page, err)
 			}
-			match, home, away, ok := parseMatch(m)
-			if !ok {
-				continue
+			found := parseFeed(body, teams)
+			if len(found) == 0 {
+				break
 			}
-			match.Phase = phase
-			match.Competition = competition
-			teamsMap[home.FlashscoreID] = home
-			teamsMap[away.FlashscoreID] = away
-			matches = append(matches, match)
+			matches = append(matches, found...)
 		}
 	}
-
-	teams := make([]domain.Team, 0, len(teamsMap))
-	for _, t := range teamsMap {
-		teams = append(teams, t)
-	}
-
-	return matches, teams, nil
+	return matches, nil
 }
 
 func parseMatch(m map[string]string) (domain.Match, domain.Team, domain.Team, bool) {

@@ -34,32 +34,40 @@ func (q *Queries) GetMatchByFlashscoreID(ctx context.Context, flashscoreID pgtyp
 	return i, err
 }
 
-const listMatchesMissingFormation = `-- name: ListMatchesMissingFormation :many
-SELECT m.id, coalesce(m.flashscore_id, '')::text AS flashscore_id, coalesce(m.sofascore_id, 0)::int AS sofascore_id
+const listMatchesToRereadLineups = `-- name: ListMatchesToRereadLineups :many
+SELECT m.id, coalesce(m.flashscore_id, '')::text AS flashscore_id, coalesce(m.sofascore_id, 0)::int AS sofascore_id,
+       m.home_team_id, m.away_team_id
 FROM matches m
-WHERE m.home_formation IS NULL
-  AND EXISTS (SELECT 1 FROM match_lineups l WHERE l.match_id = m.id)
+WHERE EXISTS (SELECT 1 FROM match_lineups l WHERE l.match_id = m.id AND l.starter AND l.formation_place IS NULL)
 ORDER BY m.match_time DESC
 `
 
-type ListMatchesMissingFormationRow struct {
+type ListMatchesToRereadLineupsRow struct {
 	ID           pgtype.UUID
 	FlashscoreID string
 	SofascoreID  int32
+	HomeTeamID   pgtype.UUID
+	AwayTeamID   pgtype.UUID
 }
 
-// Matches with stored lineups whose formations were never read, newest first;
-// for ingestor -backfill-formations.
-func (q *Queries) ListMatchesMissingFormation(ctx context.Context) ([]ListMatchesMissingFormationRow, error) {
-	rows, err := q.db.Query(ctx, listMatchesMissingFormation)
+// Matches whose lineups were stored before formations, slots, and ratings were
+// kept (a starter without a slot), newest first; for ingestor -backfill-lineups.
+func (q *Queries) ListMatchesToRereadLineups(ctx context.Context) ([]ListMatchesToRereadLineupsRow, error) {
+	rows, err := q.db.Query(ctx, listMatchesToRereadLineups)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListMatchesMissingFormationRow
+	var items []ListMatchesToRereadLineupsRow
 	for rows.Next() {
-		var i ListMatchesMissingFormationRow
-		if err := rows.Scan(&i.ID, &i.FlashscoreID, &i.SofascoreID); err != nil {
+		var i ListMatchesToRereadLineupsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FlashscoreID,
+			&i.SofascoreID,
+			&i.HomeTeamID,
+			&i.AwayTeamID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -137,20 +145,24 @@ func (q *Queries) SetPlayerPhoto(ctx context.Context, arg SetPlayerPhotoParams) 
 }
 
 const upsertLineup = `-- name: UpsertLineup :exec
-INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter, formation_place, stats)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (match_id, player_id) DO UPDATE
-SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter
+SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter,
+    formation_place = EXCLUDED.formation_place, stats = EXCLUDED.stats
 `
 
 type UpsertLineupParams struct {
-	MatchID     pgtype.UUID
-	PlayerID    pgtype.UUID
-	TeamID      pgtype.UUID
-	ShirtNumber pgtype.Int2
-	Starter     bool
+	MatchID        pgtype.UUID
+	PlayerID       pgtype.UUID
+	TeamID         pgtype.UUID
+	ShirtNumber    pgtype.Int2
+	Starter        bool
+	FormationPlace pgtype.Int2
+	Stats          []byte
 }
 
+// stats holds Flashscore's player rating: {"rating": 7.1}.
 func (q *Queries) UpsertLineup(ctx context.Context, arg UpsertLineupParams) error {
 	_, err := q.db.Exec(ctx, upsertLineup,
 		arg.MatchID,
@@ -158,6 +170,8 @@ func (q *Queries) UpsertLineup(ctx context.Context, arg UpsertLineupParams) erro
 		arg.TeamID,
 		arg.ShirtNumber,
 		arg.Starter,
+		arg.FormationPlace,
+		arg.Stats,
 	)
 	return err
 }

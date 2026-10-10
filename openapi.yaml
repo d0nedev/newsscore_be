@@ -790,15 +790,24 @@ components:
         number: { type: integer }
         starter: { type: boolean }
         photo: { type: string }
+        formationPlace:
+          type: integer
+          minimum: 1
+          maximum: 11
+          description: |
+            A starter's slot in lineups.homeFormation/awayFormation: 1 is the goalkeeper, then
+            each line from defence to attack in the order the source draws it. With "4-2-3-1",
+            2-5 are the back four, 6-7 the two holding midfielders, 8-10 the three behind the
+            striker, 11 the striker. Absent for substitutes and when the source gives none.
         stats:
           type: object
           additionalProperties: true
           description: |
-            The player's numbers in this match as SofaScore sends them. Today only Liga Topskor
-            has them, and only goals, ownGoals, totalShots (no rating); EPA and Liga Nusantara
-            have no lineups and Flashscore matches no player stats, so the field is absent there.
-            Build columns from the keys present rather than a fixed list.
-          example: { goals: 1, ownGoals: 0, totalShots: 3 }
+            The player's numbers in this match. Flashscore matches carry {"rating": 7.1} once
+            the match has ratings; Liga Topskor (SofaScore) carries goals, ownGoals, totalShots
+            and no rating; EPA and Liga Nusantara have no lineups. Build columns from the keys
+            present rather than a fixed list.
+          examples: [{ rating: 7.1 }, { goals: 1, ownGoals: 0, totalShots: 3 }]
 
     Match:
       type: object

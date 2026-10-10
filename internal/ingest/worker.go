@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -28,10 +29,13 @@ type Worker struct {
 	assetsDir     string
 
 	sofascoreSynced time.Time // last SofaScore league sync, see syncSofascore
+	// moreSynced is when each league's whole season ("show more" pages) was last read.
+	// ponytail: in-memory, so a restart reads every season again once; a column if restarts get frequent.
+	moreSynced map[string]time.Time
 }
 
 func NewWorker(queries *db.Queries, logger *slog.Logger, detailsPerRun int, assetsDir string) *Worker {
-	return &Worker{db: queries, logger: logger, detailsPerRun: detailsPerRun, assetsDir: assetsDir}
+	return &Worker{db: queries, logger: logger, detailsPerRun: detailsPerRun, assetsDir: assetsDir, moreSynced: map[string]time.Time{}}
 }
 
 // Sync pulls the league page (fixtures and results), then fills in details for finished matches that lack them.
@@ -71,6 +75,9 @@ func (w *Worker) Sync(ctx context.Context) error {
 	}
 	return w.runJobs(ctx)
 }
+
+// moreEvery spaces reading a league's whole season (2-6 extra requests each).
+const moreEvery = 24 * time.Hour
 
 // photosPerRun caps player photo downloads per league sync (one per second);
 // the first fill of ~500 photos then spreads over a few runs.
@@ -190,9 +197,16 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 func (w *Worker) syncCompetition(ctx context.Context, c db.ListActiveCompetitionsRow) error {
-	page, err := flashscore.ScrapeLeague(c.FlashscorePath)
+	// The rest of the season beyond the page's 100 fixtures changes slowly: once a day.
+	more := time.Since(w.moreSynced[c.Slug]) > moreEvery
+	page, err := flashscore.ScrapeLeague(c.FlashscorePath, more)
 	if err != nil {
 		return fmt.Errorf("scrape %s: %w", c.FlashscorePath, err)
+	}
+	if page.MoreErr != nil {
+		w.logger.Warn("show more pages failed", slog.String("competition", c.Slug), slog.Any("error", page.MoreErr))
+	} else if more {
+		w.moreSynced[c.Slug] = time.Now()
 	}
 	matches, teams := page.Matches, page.Teams
 	if err := w.db.SetCompetitionSplitSeason(ctx, db.SetCompetitionSplitSeasonParams{ID: c.ID, SplitSeason: page.Split}); err != nil {
@@ -403,40 +417,11 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscore
 	if err != nil {
 		return err
 	}
-	players := lineup.Players
-
 	if err := w.saveEvents(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, events); err != nil {
 		return err
 	}
-
-	for _, p := range players {
-		number := pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0}
-		position := pgtype.Text{String: "GK", Valid: p.Goalkeeper}
-		team := sideTeam(p.Team, m.HomeTeamID, m.AwayTeamID)
-
-		playerID, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
-			FlashscoreID:   optText(p.FlashscoreID),
-			TeamID:         team,
-			Name:           p.Name,
-			Nationality:    optText(p.Nationality),
-			ShirtNumber:    number,
-			Position:       position,
-			PhotoSourceUrl: optText(p.PhotoURL),
-		})
-		if err != nil {
-			return fmt.Errorf("upsert player %s: %w", p.FlashscoreID, err)
-		}
-		if err := w.db.UpsertLineup(ctx, db.UpsertLineupParams{
-			MatchID: m.ID, PlayerID: playerID, TeamID: team, ShirtNumber: number, Starter: p.Starter,
-		}); err != nil {
-			return fmt.Errorf("upsert lineup %s: %w", p.FlashscoreID, err)
-		}
-	}
-
-	if len(players) > 0 {
-		if err := w.setFormations(ctx, m.ID, lineup.Formations); err != nil {
-			return err
-		}
+	if err := w.saveFlashscoreLineup(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, lineup); err != nil {
+		return err
 	}
 
 	out := make([]statJSON, 0, len(stats))
@@ -452,6 +437,48 @@ func (w *Worker) syncMatchDetails(ctx context.Context, m db.GetMatchByFlashscore
 	return w.db.UpsertMatchStats(ctx, db.UpsertMatchStatsParams{MatchID: m.ID, Stats: raw})
 }
 
+// saveFlashscoreLineup stores the players, each one's slot and rating, and both formations.
+func (w *Worker) saveFlashscoreLineup(ctx context.Context, match, homeID, awayID pgtype.UUID, lineup flashscore.Lineup) error {
+	for _, p := range lineup.Players {
+		number := pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0}
+		position := pgtype.Text{String: "GK", Valid: p.Goalkeeper}
+		team := sideTeam(p.Team, homeID, awayID)
+
+		playerID, err := w.db.UpsertPlayer(ctx, db.UpsertPlayerParams{
+			FlashscoreID:   optText(p.FlashscoreID),
+			TeamID:         team,
+			Name:           p.Name,
+			Nationality:    optText(p.Nationality),
+			ShirtNumber:    number,
+			Position:       position,
+			PhotoSourceUrl: optText(p.PhotoURL),
+		})
+		if err != nil {
+			return fmt.Errorf("upsert player %s: %w", p.FlashscoreID, err)
+		}
+		var stats []byte
+		if r, err := strconv.ParseFloat(p.Rating, 64); err == nil {
+			stats, _ = json.Marshal(map[string]float64{"rating": r})
+		}
+		if err := w.db.UpsertLineup(ctx, db.UpsertLineupParams{
+			MatchID: match, PlayerID: playerID, TeamID: team, ShirtNumber: number, Starter: p.Starter,
+			FormationPlace: place(p.Starter, p.FormationPlace),
+			Stats:          stats,
+		}); err != nil {
+			return fmt.Errorf("upsert lineup %s: %w", p.FlashscoreID, err)
+		}
+	}
+	if len(lineup.Players) == 0 {
+		return nil
+	}
+	return w.setFormations(ctx, match, lineup.Formations)
+}
+
+// place is a starter's formation slot; 0 records that the source gave none. Substitutes have none.
+func place(starter bool, slot int) pgtype.Int2 {
+	return pgtype.Int2{Int16: int16(slot), Valid: starter}
+}
+
 // setFormations stores both sides' formations; "" records that the source gives none.
 func (w *Worker) setFormations(ctx context.Context, match pgtype.UUID, f [2]string) error {
 	return w.db.SetMatchFormations(ctx, db.SetMatchFormationsParams{
@@ -461,22 +488,25 @@ func (w *Worker) setFormations(ctx context.Context, match pgtype.UUID, f [2]stri
 	})
 }
 
-// BackfillFormations reads the lineups feed again for every match whose
-// lineups were stored before formations were kept: one request per match.
+// BackfillLineups reads the lineups feed again for every match whose lineups
+// were stored before formations, slots, and ratings were kept: one request per match.
 // SofaScore matches need SOFASCORE_PROXY when its API asks for a captcha; if it
 // blocks anyway, they are skipped and Flashscore's carry on.
-func (w *Worker) BackfillFormations(ctx context.Context) error {
-	matches, err := w.db.ListMatchesMissingFormation(ctx)
+func (w *Worker) BackfillLineups(ctx context.Context) error {
+	matches, err := w.db.ListMatchesToRereadLineups(ctx)
 	if err != nil {
 		return err
 	}
-	w.logger.Info("formations to fill", slog.Int("matches", len(matches)))
+	w.logger.Info("lineups to reread", slog.Int("matches", len(matches)))
 	sofascoreBlocked := false
 	for i, m := range matches {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		var f [2]string
+		// Logged first: the skips below would jump past it.
+		if i > 0 && i%250 == 0 {
+			w.logger.Info("lineups backfill", slog.Int("done", i), slog.Int("total", len(matches)))
+		}
 		switch {
 		case m.SofascoreID != 0:
 			if sofascoreBlocked {
@@ -492,7 +522,9 @@ func (w *Worker) BackfillFormations(ctx context.Context) error {
 				w.logger.Warn("lineup failed", slog.Int("event", int(m.SofascoreID)), slog.Any("error", err))
 				continue
 			}
-			f = l.Formations
+			if err := w.saveSofascoreLineup(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, l); err != nil {
+				return err
+			}
 		default:
 			l, err := flashscore.ScrapeLineup(m.FlashscoreID)
 			if errors.Is(err, flashscore.ErrBlocked) {
@@ -502,13 +534,9 @@ func (w *Worker) BackfillFormations(ctx context.Context) error {
 				w.logger.Warn("lineup failed", slog.String("match", m.FlashscoreID), slog.Any("error", err))
 				continue
 			}
-			f = l.Formations
-		}
-		if err := w.setFormations(ctx, m.ID, f); err != nil {
-			return err
-		}
-		if (i+1)%250 == 0 {
-			w.logger.Info("formations backfill", slog.Int("done", i+1), slog.Int("total", len(matches)))
+			if err := w.saveFlashscoreLineup(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, l); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

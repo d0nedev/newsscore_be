@@ -114,7 +114,7 @@ func (q *Queries) ListMatchEvents(ctx context.Context, matchID pgtype.UUID) ([]L
 }
 
 const listMatchLineups = `-- name: ListMatchLineups :many
-SELECT p.id, p.name, p.photo_url, l.shirt_number, l.starter, l.team_id, l.stats
+SELECT p.id, p.name, p.photo_url, l.shirt_number, l.starter, l.team_id, l.stats, l.formation_place
 FROM match_lineups l
 JOIN players p ON p.id = l.player_id
 WHERE l.match_id = $1
@@ -122,13 +122,14 @@ ORDER BY l.starter DESC, l.shirt_number NULLS LAST, p.name
 `
 
 type ListMatchLineupsRow struct {
-	ID          pgtype.UUID
-	Name        string
-	PhotoUrl    pgtype.Text
-	ShirtNumber pgtype.Int2
-	Starter     bool
-	TeamID      pgtype.UUID
-	Stats       []byte
+	ID             pgtype.UUID
+	Name           string
+	PhotoUrl       pgtype.Text
+	ShirtNumber    pgtype.Int2
+	Starter        bool
+	TeamID         pgtype.UUID
+	Stats          []byte
+	FormationPlace pgtype.Int2
 }
 
 func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]ListMatchLineupsRow, error) {
@@ -148,6 +149,7 @@ func (q *Queries) ListMatchLineups(ctx context.Context, matchID pgtype.UUID) ([]
 			&i.Starter,
 			&i.TeamID,
 			&i.Stats,
+			&i.FormationPlace,
 		); err != nil {
 			return nil, err
 		}

@@ -25,7 +25,7 @@ func main() {
 }
 
 func run() int {
-	backfill := flag.Bool("backfill-formations", false, "read lineups again for matches stored before formations were kept, then exit")
+	backfill := flag.Bool("backfill-lineups", false, "read lineups again for matches stored before formations, slots, and ratings were kept, then exit")
 	flag.Parse()
 
 	cfg, err := config.Load()
@@ -54,8 +54,8 @@ func run() int {
 	sofascore.SetProxy(cfg.Ingest.SofascoreProxy)
 	worker := ingest.NewWorker(db.New(pool), logger, cfg.Ingest.DetailsPerRun, cfg.App.AssetsDir)
 	if *backfill {
-		if err := worker.BackfillFormations(ctx); err != nil {
-			logger.Error("backfill formations failed", slog.Any("error", err))
+		if err := worker.BackfillLineups(ctx); err != nil {
+			logger.Error("backfill lineups failed", slog.Any("error", err))
 			return 1
 		}
 		return 0

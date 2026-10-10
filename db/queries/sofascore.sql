@@ -94,10 +94,11 @@ SET type = EXCLUDED.type,
     updated_at = now();
 
 -- name: UpsertSofascoreLineup :exec
-INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter, stats)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO match_lineups (match_id, player_id, team_id, shirt_number, starter, stats, formation_place)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (match_id, player_id) DO UPDATE
-SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter, stats = EXCLUDED.stats;
+SET team_id = EXCLUDED.team_id, shirt_number = EXCLUDED.shirt_number, starter = EXCLUDED.starter,
+    stats = EXCLUDED.stats, formation_place = EXCLUDED.formation_place;
 
 -- name: ListSofascoreSquadsToSync :many
 -- Teams in a SofaScore competition's table whose squad was not read this week, oldest first.

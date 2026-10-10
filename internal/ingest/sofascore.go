@@ -317,28 +317,8 @@ func (w *Worker) syncSofascoreMatch(ctx context.Context, target string) error {
 		}
 	}
 
-	for home, players := range map[bool][]sofascore.LineupPlayer{true: d.Home, false: d.Away} {
-		team := side(home)
-		for _, p := range players {
-			playerID, err := w.upsertSofascorePlayer(ctx, p.Player, team, p.ShirtNumber)
-			if err != nil {
-				return err
-			}
-			if err := w.db.UpsertSofascoreLineup(ctx, db.UpsertSofascoreLineupParams{
-				MatchID: m.ID, PlayerID: playerID, TeamID: team,
-				ShirtNumber: pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0},
-				Starter:     !p.Substitute,
-				Stats:       playerStats(p.Statistics),
-			}); err != nil {
-				return fmt.Errorf("upsert lineup %s: %w", p.Player.Name, err)
-			}
-		}
-	}
-
-	if len(d.Home)+len(d.Away) > 0 {
-		if err := w.setFormations(ctx, m.ID, d.Formations); err != nil {
-			return err
-		}
+	if err := w.saveSofascoreLineup(ctx, m.ID, m.HomeTeamID, m.AwayTeamID, d.Lineup); err != nil {
+		return err
 	}
 
 	out := make([]statJSON, 0, len(d.Stats))
@@ -351,6 +331,37 @@ func (w *Worker) syncSofascoreMatch(ctx context.Context, target string) error {
 	}
 	// Stats go last: their row marks the match as done, so a failure above retries it.
 	return w.db.UpsertMatchStats(ctx, db.UpsertMatchStatsParams{MatchID: m.ID, Stats: raw})
+}
+
+// saveSofascoreLineup stores the players with their numbers in the match and
+// both formations. SofaScore lists starters in pitch order, goalkeeper first,
+// which its own pitch view follows, so a starter's slot is its place in that list.
+func (w *Worker) saveSofascoreLineup(ctx context.Context, match, homeID, awayID pgtype.UUID, l sofascore.Lineup) error {
+	for team, players := range map[pgtype.UUID][]sofascore.LineupPlayer{homeID: l.Home, awayID: l.Away} {
+		slot := 0
+		for _, p := range players {
+			playerID, err := w.upsertSofascorePlayer(ctx, p.Player, team, p.ShirtNumber)
+			if err != nil {
+				return err
+			}
+			if !p.Substitute {
+				slot++
+			}
+			if err := w.db.UpsertSofascoreLineup(ctx, db.UpsertSofascoreLineupParams{
+				MatchID: match, PlayerID: playerID, TeamID: team,
+				ShirtNumber:    pgtype.Int2{Int16: int16(p.ShirtNumber), Valid: p.ShirtNumber > 0},
+				Starter:        !p.Substitute,
+				Stats:          playerStats(p.Statistics),
+				FormationPlace: place(!p.Substitute, slot),
+			}); err != nil {
+				return fmt.Errorf("upsert lineup %s: %w", p.Player.Name, err)
+			}
+		}
+	}
+	if len(l.Home)+len(l.Away) == 0 {
+		return nil
+	}
+	return w.setFormations(ctx, match, l.Formations)
 }
 
 // playerStats drops SofaScore's type tag; nil when nothing else is left.

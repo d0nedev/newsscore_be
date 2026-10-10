@@ -113,12 +113,13 @@ type MatchEvent struct {
 }
 
 type MatchLineup struct {
-	MatchID     pgtype.UUID
-	PlayerID    pgtype.UUID
-	TeamID      pgtype.UUID
-	ShirtNumber pgtype.Int2
-	Starter     bool
-	Stats       []byte
+	MatchID        pgtype.UUID
+	PlayerID       pgtype.UUID
+	TeamID         pgtype.UUID
+	ShirtNumber    pgtype.Int2
+	Starter        bool
+	Stats          []byte
+	FormationPlace pgtype.Int2
 }
 
 type MatchRow struct {

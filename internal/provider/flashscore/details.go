@@ -83,6 +83,9 @@ type Player struct {
 	Starter      bool // false for substitutes
 	PhotoURL     string
 	Goalkeeper   bool
+	// FormationPlace is a starter's slot, 1 (goalkeeper) to 11 in pitch order; 0 when not given.
+	FormationPlace int
+	Rating         string // Flashscore's player rating, e.g. "7.1"; "" before or without one
 }
 
 // Lineup is both teams' players and formations ("4-4-2"; "" when the feed has none).
@@ -231,15 +234,18 @@ func parseLineups(body string) Lineup {
 			continue
 		}
 		number, _ := strconv.Atoi(m["LJ"])
+		place, _ := strconv.Atoi(m["LL"])
 		out.Players = append(out.Players, Player{
-			FlashscoreID: id,
-			Name:         m["LI"],
-			Nationality:  m["LQ"],
-			ShirtNumber:  number,
-			Team:         side,
-			Starter:      section == "Starting Lineups",
-			Goalkeeper:   m["LS"] == "Goalkeeper",
-			PhotoURL:     imageURL(m["LPX"]), // 108x108; LPI and LPL are smaller cuts
+			FormationPlace: place,
+			Rating:         m["LPR"],
+			FlashscoreID:   id,
+			Name:           m["LI"],
+			Nationality:    m["LQ"],
+			ShirtNumber:    number,
+			Team:           side,
+			Starter:        section == "Starting Lineups",
+			Goalkeeper:     m["LS"] == "Goalkeeper",
+			PhotoURL:       imageURL(m["LPX"]), // 108x108; LPI and LPL are smaller cuts
 		})
 	}
 	return out

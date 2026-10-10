@@ -54,7 +54,7 @@ const (
 		"III÷necyDrYH¬IA÷2¬IB÷39'¬IE÷1¬IF÷Haye T.¬IK÷Yellow Card¬IM÷Y7DW0nHu¬~" +
 		"III÷OjJnQy65¬IA÷2¬IB÷46'¬IE÷6¬IF÷Putra B.¬IK÷Substitution - Out¬IM÷4bIpHm56¬IE÷7¬IF÷Sekulic B.¬IK÷Substitution - In¬IM÷AB4TE5oN¬~"
 	lineupsFeed = "LA÷Formation¬LB÷Starting Lineups¬LGT÷1¬LC÷1¬~" +
-		"LD÷1-4-4-2¬LH÷0¬LP÷Y5cFTU5E¬LI÷Chica S.¬LPX÷0MnIUniA-EHOqXBOi.png¬LJ÷44¬LQ÷Spain¬~" +
+		"LD÷1-4-4-2¬LH÷0¬LP÷Y5cFTU5E¬LI÷Chica S.¬LPX÷0MnIUniA-EHOqXBOi.png¬LJ÷44¬LQ÷Spain¬LL÷7¬LPR÷7.3¬~" +
 		"LH÷2¬LP÷OApFFtdg¬LI÷Handika R.¬LR÷(G)¬LS÷Goalkeeper¬LJ÷1¬~" +
 		"LC÷2¬~LD÷1-4-2-3-1¬LH÷1¬LP÷Y7DW0nHu¬LI÷Haye T.¬LJ÷33¬~" +
 		"LB÷Substitutes¬LGT÷1¬LC÷1¬~LH÷11¬LP÷SMRZSrKm¬LI÷Abizal R.¬LJ÷1¬LQ÷Indonesia¬~" +
@@ -87,7 +87,7 @@ func TestParseLineups(t *testing.T) {
 	got := lineup.Players
 	want := []Player{
 		{FlashscoreID: "Y5cFTU5E", Name: "Chica S.", Nationality: "Spain", ShirtNumber: 44, Team: 1, Starter: true,
-			PhotoURL: "https://static.flashscore.com/res/image/data/0MnIUniA-EHOqXBOi.png"},
+			PhotoURL: "https://static.flashscore.com/res/image/data/0MnIUniA-EHOqXBOi.png", FormationPlace: 7, Rating: "7.3"},
 		{FlashscoreID: "OApFFtdg", Name: "Handika R.", ShirtNumber: 1, Team: 1, Starter: true, Goalkeeper: true},
 		{FlashscoreID: "Y7DW0nHu", Name: "Haye T.", ShirtNumber: 33, Team: 2, Starter: true},
 		{FlashscoreID: "SMRZSrKm", Name: "Abizal R.", Nationality: "Indonesia", ShirtNumber: 1, Team: 1},
@@ -225,5 +225,28 @@ func TestHeadingLogo(t *testing.T) {
 	}
 	if got := headingLogo(`<img class="heading__logo" src="https://evil.example/x.png">`); got != "" {
 		t.Errorf("headingLogo took a foreign host: %q", got)
+	}
+}
+
+// A "show more" fixtures page (tf_ feed), trimmed: one section, one match.
+const moreFeed = "SA÷1¬~ZA÷INDONESIA: Super League¬ZEE÷8SwKOBWT¬ZB÷228¬ZY÷Indonesia¬ZL÷/football/indonesia/super-league/¬~" +
+	"AA÷fFAhBUV1¬AD÷1797595200¬AB÷1¬CR÷1¬ER÷Round 15¬WM÷BAL¬PX÷W82OaQl9¬AE÷Bali United¬WU÷bali-united¬OA÷Me4JWEme-K6ujqDls.png¬" +
+	"WN÷PSI¬PY÷0tqnseis¬AF÷PSIM Yogyakarta¬WV÷psim-yogyakarta¬OB÷lCS3WI5k-IFY6Af8o.png¬AN÷n¬~"
+
+func TestParseMoreFeed(t *testing.T) {
+	teams := map[string]domain.Team{}
+	got := parseFeed(moreFeed, teams)
+	if len(got) != 1 || got[0].FlashscoreID != "fFAhBUV1" || got[0].Round != "Round 15" || got[0].Status != "scheduled" ||
+		got[0].Competition.Path != "/football/indonesia/super-league/" {
+		t.Fatalf("parseFeed = %+v", got)
+	}
+	if len(teams) != 2 {
+		t.Errorf("teams = %d, want 2", len(teams))
+	}
+
+	page := `cjs.Api.config = { country_id = 228; tournament_id = "8SwKOBWT"; seasonId: 190 }`
+	if c, tr, s := pageCountryPattern.FindStringSubmatch(page), pageTournamentPattern.FindStringSubmatch(page), pageSeasonPattern.FindStringSubmatch(page); c == nil || tr == nil || s == nil ||
+		c[1] != "228" || tr[1] != "8SwKOBWT" || s[1] != "190" {
+		t.Errorf("ids = %v %v %v", c, tr, s)
 	}
 }
