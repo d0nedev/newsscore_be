@@ -141,7 +141,7 @@ func (w *Worker) syncSofascoreCompetition(ctx context.Context, c db.ListSofascor
 			if err != nil {
 				return err
 			}
-			playerID, err := w.upsertSofascorePlayer(ctx, p.Player, teamID, 0)
+			playerID, err := w.upsertSofascorePlayer(ctx, p.Player, teamID, 0, pgtype.UUID{})
 			if err != nil {
 				return err
 			}
@@ -188,8 +188,10 @@ func score(s sofascore.Score) pgtype.Int2 {
 	return pgtype.Int2{Int16: int16(*s.Current), Valid: true}
 }
 
-// upsertSofascorePlayer stores a player and returns their id; shirt 0 keeps the known number.
-func (w *Worker) upsertSofascorePlayer(ctx context.Context, p sofascore.Player, team pgtype.UUID, shirt int) (pgtype.UUID, error) {
+// upsertSofascorePlayer stores a player and returns their id; shirt 0 keeps the
+// known number. match is the match whose lineup names them (see UpsertPlayer),
+// or invalid for current data (squads, top players).
+func (w *Worker) upsertSofascorePlayer(ctx context.Context, p sofascore.Player, team pgtype.UUID, shirt int, match pgtype.UUID) (pgtype.UUID, error) {
 	if shirt == 0 {
 		shirt, _ = strconv.Atoi(p.JerseyNumber)
 	}
@@ -203,6 +205,7 @@ func (w *Worker) upsertSofascorePlayer(ctx context.Context, p sofascore.Player, 
 		BirthDate:   pgtype.Date{Time: born, Valid: !born.IsZero()},
 		HeightCm:    pgtype.Int2{Int16: int16(p.Height), Valid: p.Height > 0},
 		ShirtNumber: pgtype.Int2{Int16: int16(shirt), Valid: shirt > 0},
+		MatchID:     match,
 	})
 	if err != nil {
 		return id, fmt.Errorf("player %s: %w", p.Name, err)
@@ -226,7 +229,7 @@ func (w *Worker) syncSofascoreSquads(ctx context.Context, limit int32) error {
 			continue
 		}
 		for _, p := range players {
-			if _, err := w.upsertSofascorePlayer(ctx, p, t.ID, 0); err != nil {
+			if _, err := w.upsertSofascorePlayer(ctx, p, t.ID, 0, pgtype.UUID{}); err != nil {
 				return err
 			}
 		}
@@ -340,7 +343,7 @@ func (w *Worker) saveSofascoreLineup(ctx context.Context, match, homeID, awayID 
 	for team, players := range map[pgtype.UUID][]sofascore.LineupPlayer{homeID: l.Home, awayID: l.Away} {
 		slot := 0
 		for _, p := range players {
-			playerID, err := w.upsertSofascorePlayer(ctx, p.Player, team, p.ShirtNumber)
+			playerID, err := w.upsertSofascorePlayer(ctx, p.Player, team, p.ShirtNumber, match)
 			if err != nil {
 				return err
 			}

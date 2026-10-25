@@ -530,15 +530,22 @@ func (q *Queries) UpsertSofascoreMatchEvent(ctx context.Context, arg UpsertSofas
 
 const upsertSofascorePlayer = `-- name: UpsertSofascorePlayer :one
 INSERT INTO players (sofascore_id, team_id, name, nationality, position, birth_date, height_cm, shirt_number, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8, now())
 ON CONFLICT (sofascore_id) DO UPDATE
-SET team_id = EXCLUDED.team_id,
+SET team_id = CASE WHEN EXISTS (SELECT 1 FROM match_lineups l JOIN matches m ON m.id = l.match_id
+                       WHERE l.player_id = players.id
+                         AND m.match_time > (SELECT cur.match_time FROM matches cur WHERE cur.id = $9))
+                   THEN players.team_id ELSE EXCLUDED.team_id END,
     name = EXCLUDED.name,
     nationality = coalesce(EXCLUDED.nationality, players.nationality),
     position = coalesce(EXCLUDED.position, players.position),
     birth_date = coalesce(EXCLUDED.birth_date, players.birth_date),
     height_cm = coalesce(EXCLUDED.height_cm, players.height_cm),
-    shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
+    shirt_number = CASE WHEN EXISTS (SELECT 1 FROM match_lineups l JOIN matches m ON m.id = l.match_id
+                       WHERE l.player_id = players.id
+                         AND m.match_time > (SELECT cur.match_time FROM matches cur WHERE cur.id = $9))
+                        THEN players.shirt_number ELSE coalesce(EXCLUDED.shirt_number, players.shirt_number) END,
     updated_at = now()
 RETURNING id
 `
@@ -552,8 +559,10 @@ type UpsertSofascorePlayerParams struct {
 	BirthDate   pgtype.Date
 	HeightCm    pgtype.Int2
 	ShirtNumber pgtype.Int2
+	MatchID     pgtype.UUID
 }
 
+// match_id: see UpsertPlayer; NULL (squads, top players, both current) always sets the team.
 func (q *Queries) UpsertSofascorePlayer(ctx context.Context, arg UpsertSofascorePlayerParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertSofascorePlayer,
 		arg.SofascoreID,
@@ -564,6 +573,7 @@ func (q *Queries) UpsertSofascorePlayer(ctx context.Context, arg UpsertSofascore
 		arg.BirthDate,
 		arg.HeightCm,
 		arg.ShirtNumber,
+		arg.MatchID,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)

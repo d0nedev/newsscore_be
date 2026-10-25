@@ -452,6 +452,7 @@ func (w *Worker) saveFlashscoreLineup(ctx context.Context, match, homeID, awayID
 			ShirtNumber:    number,
 			Position:       position,
 			PhotoSourceUrl: optText(p.PhotoURL),
+			MatchID:        match,
 		})
 		if err != nil {
 			return fmt.Errorf("upsert player %s: %w", p.FlashscoreID, err)

@@ -238,14 +238,21 @@ func (q *Queries) UpsertMatchStats(ctx context.Context, arg UpsertMatchStatsPara
 
 const upsertPlayer = `-- name: UpsertPlayer :one
 INSERT INTO players (flashscore_id, team_id, name, nationality, shirt_number, position, photo_source_url, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, now())
 ON CONFLICT (flashscore_id) DO UPDATE
 SET name = EXCLUDED.name,
     nationality = coalesce(EXCLUDED.nationality, players.nationality),
     -- team_id is the club: a national team match keeps the club the player already has.
-    team_id = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_id) IS NULL
-                   THEN EXCLUDED.team_id ELSE players.team_id END,
-    shirt_number = coalesce(EXCLUDED.shirt_number, players.shirt_number),
+    team_id = CASE WHEN (SELECT country_id FROM teams WHERE id = EXCLUDED.team_id) IS NOT NULL
+                     OR EXISTS (SELECT 1 FROM match_lineups l JOIN matches m ON m.id = l.match_id
+                       WHERE l.player_id = players.id
+                         AND m.match_time > (SELECT cur.match_time FROM matches cur WHERE cur.id = $8))
+                   THEN players.team_id ELSE EXCLUDED.team_id END,
+    shirt_number = CASE WHEN EXISTS (SELECT 1 FROM match_lineups l JOIN matches m ON m.id = l.match_id
+                       WHERE l.player_id = players.id
+                         AND m.match_time > (SELECT cur.match_time FROM matches cur WHERE cur.id = $8))
+                        THEN players.shirt_number ELSE coalesce(EXCLUDED.shirt_number, players.shirt_number) END,
     position = coalesce(EXCLUDED.position, players.position),
     -- A new photo source clears the stored copy so the ingestor downloads it again.
     photo_url = CASE WHEN EXCLUDED.photo_source_url IS NOT NULL AND EXCLUDED.photo_source_url IS DISTINCT FROM players.photo_source_url
@@ -263,9 +270,13 @@ type UpsertPlayerParams struct {
 	ShirtNumber    pgtype.Int2
 	Position       pgtype.Text
 	PhotoSourceUrl pgtype.Text
+	MatchID        pgtype.UUID
 }
 
 // Position is only known for goalkeepers (lineup role); never downgrade a known one to NULL.
+// match_id is the match whose lineup names the player: an older match than one
+// already stored for them (a backfill, a club page's old results) keeps the
+// team and number they have now, so a player who moved stays at his new club.
 func (q *Queries) UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertPlayer,
 		arg.FlashscoreID,
@@ -275,6 +286,7 @@ func (q *Queries) UpsertPlayer(ctx context.Context, arg UpsertPlayerParams) (pgt
 		arg.ShirtNumber,
 		arg.Position,
 		arg.PhotoSourceUrl,
+		arg.MatchID,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
