@@ -13,7 +13,7 @@ Turnstile rejects headless browsers: the window must be real, on a desktop or,
 on a server, a virtual display (--virtual, needs Xvfb: apt install xvfb).
 
   pip install "camoufox[geoip]" && python -m camoufox fetch
-  python3 scrap-claude/sofascore_proxy.py [--port 8787] [--virtual]
+  python3 scrap-claude/sofascore_proxy.py [--port 8787] [--host 127.0.0.1] [--virtual]
 """
 import argparse, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -81,6 +81,7 @@ class Browser:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8787)
+    ap.add_argument("--host", default="127.0.0.1", help="0.0.0.0 so Docker containers reach it; keep the port closed to the internet")
     ap.add_argument("--virtual", action="store_true", help="draw the browser on an Xvfb display (servers)")
     args = ap.parse_args()
     browser = Browser(args.virtual)
@@ -106,8 +107,8 @@ def main():
 
     # Single-threaded on purpose: Playwright's sync page is not thread-safe, and
     # one request at a time is the pace SofaScore tolerates anyway.
-    print(f"listening on http://localhost:{args.port}", flush=True)
-    HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    print(f"listening on http://{args.host}:{args.port}", flush=True)
+    HTTPServer((args.host, args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

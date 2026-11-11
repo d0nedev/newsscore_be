@@ -186,7 +186,45 @@ ssh newsscore "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddres
 ssh -N -L 15432:<ip-container>:5432 newsscore   # lalu psql -h localhost -p 15432 ...
 ```
 
+## SofaScore proxy (opsional)
+
+Dari IP server, API SofaScore biasanya minta captcha (403 `challenge`), jadi skor Liga Nusantara, EPA, dan Liga Topskor tidak diperbarui. `scrap-claude/sofascore_proxy.py` menjalankan Firefox (Camoufox) asli yang lolos captcha, lalu ingestor memanggil API lewat browser itu. Butuh RAM sekitar 500 MB sampai 1 GB tambahan.
+
+```sh
+sudo apt install -y xvfb python3-venv
+python3 -m venv ~/sofaproxy && ~/sofaproxy/bin/pip install "camoufox[geoip]" && ~/sofaproxy/bin/python -m camoufox fetch
+
+# Container -> host:8787. Hanya dari jaringan Docker; port tetap tertutup dari internet.
+sudo ufw allow from 172.16.0.0/12 to any port 8787 proto tcp
+
+sudo tee /etc/systemd/system/sofaproxy.service >/dev/null <<'EOF'
+[Unit]
+Description=SofaScore captcha proxy
+After=network-online.target
+
+[Service]
+User=deploy
+ExecStart=/home/deploy/sofaproxy/bin/python /home/deploy/newsscore/scrap-claude/sofascore_proxy.py --host 0.0.0.0 --virtual
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload && sudo systemctl enable --now sofaproxy
+journalctl -u sofaproxy -f        # tunggu "token ok"
+```
+
+Lalu di `deploy/.env` set `SOFASCORE_PROXY=http://host.docker.internal:8787` dan `docker compose up -d ingestor`. Cek:
+
+```sh
+curl -s localhost:8787/api/v1/unique-tournament/17/seasons | head -c 200    # JSON, bukan 403
+docker compose logs --since=2h ingestor | grep -i sofascore                  # tanpa "sync sofascore failed"
+```
+
+Proxy tidak punya autentikasi: jangan buka port 8787 ke internet. Kalau log proxy terus "no token after 60s", IP server ditandai keras oleh Cloudflare; isi data SofaScore dari lokal (start pertama pilihan B).
+
 ## Batasan
 
-- SofaScore: `deploy/docker-compose.yml` tidak meneruskan `SOFASCORE_PROXY`, jadi dari server sync SofaScore biasanya berhenti di 403 tiap jam. Ini tidak berbahaya, tapi skor liga SofaScore (Liga Nusantara, EPA, Liga Topskor) tidak diperbarui di server.
+- SofaScore tanpa proxy di atas: sync berhenti di 403 tiap jam. Tidak berbahaya, tapi skor liga SofaScore tidak diperbarui.
 - Satu server adalah single point of failure. Pasang uptime check Grafana Cloud ke `https://$DOMAIN/ready` (lihat [`runbook.md`](runbook.md#deploy-vps-deploy)).

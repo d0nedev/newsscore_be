@@ -97,7 +97,11 @@ services:
       INGEST_DETAILS_PER_RUN: ${INGEST_DETAILS_PER_RUN:-20}
       INGEST_LIVE_INTERVAL: ${INGEST_LIVE_INTERVAL:-20s}
       FLASHSCORE_FSIGN: ${FLASHSCORE_FSIGN:-}
+      # scrap-claude/sofascore_proxy.py on the host, e.g. http://host.docker.internal:8787
+      SOFASCORE_PROXY: ${SOFASCORE_PROXY:-}
       DB_MAX_CONNS: "4"
+    extra_hosts:
+      - host.docker.internal:host-gateway
     mem_limit: 256m
     labels:
       service: newsscore-ingestor
