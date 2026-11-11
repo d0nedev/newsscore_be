@@ -226,6 +226,24 @@ Proxy tidak punya autentikasi: jangan buka port 8787 ke internet. Kalau log prox
 
 > Dicoba 2026-11-11 di server prod (148.230.99.150): `www.sofascore.com` menjawab 403 JSON bahkan untuk halaman depan di browser asli, tanpa captcha. IP diblokir total, proxy tidak membantu. Service `sofaproxy` terpasang di `/opt/sofaproxy` tapi dimatikan. Jalan keluar: proxy di mesin dengan IP lain (residential) lalu tunnel ke server, atau seed dari lokal.
 
+### Refresh data SofaScore dari lokal (Coolify)
+
+Data SofaScore di prod tidak update sendiri. Untuk menyegarkan: jalankan `go run ./cmd/seed-sofascore` di lokal (butuh `SOFASCORE_PROXY` lokal; dari ISP Indonesia `www.sofascore.com` diblokir Internet Positif, pakai VPN), lalu ganti DB prod dengan dump lokal. Ini **menimpa seluruh DB prod**, termasuk `users`, `sessions`, dan `news`: periksa dulu isinya.
+
+```sh
+S=<suffix container Coolify, mis. ci1v0ttne7who7dd7ylp4ba3-20261111T074556>
+# lokal
+pg_dump "$DATABASE_URL" -Fc --no-owner --no-acl -f local.dump && scp local.dump newsscore-root:/root/backups/
+# server: backup, stop, ganti, start
+docker exec postgres-$S sh -c 'pg_dump -U $POSTGRES_USER -d $POSTGRES_DB -Fc' > /root/backups/prod-$(date +%F).dump
+docker stop ingestor-$S app-$S
+docker exec postgres-$S sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+docker exec -i postgres-$S sh -c 'pg_restore -U $POSTGRES_USER -d $POSTGRES_DB --no-owner --no-acl --exit-on-error' < /root/backups/local.dump
+docker start app-$S ingestor-$S
+```
+
+Logo dan foto: `tar -C data/assets -czf - . | ssh newsscore-root 'D=/var/lib/docker/volumes/<app-uuid>_assets/_data; tar -xzf - -C $D && chown -R 65532:65532 $D'`.
+
 ## Batasan
 
 - SofaScore tanpa proxy di atas: sync berhenti di 403 tiap jam. Tidak berbahaya, tapi skor liga SofaScore tidak diperbarui.
