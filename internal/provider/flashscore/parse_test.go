@@ -185,7 +185,10 @@ func TestCheckStatus(t *testing.T) {
 			t.Errorf("%d: %v, want ErrBlocked", code, err)
 		}
 	}
-	if err := checkStatus(500); err == nil || errors.Is(err, ErrBlocked) {
+	if err := checkStatus(404); !errors.Is(err, ErrNotFound) || errors.Is(err, ErrBlocked) {
+		t.Errorf("404: %v, want ErrNotFound", err)
+	}
+	if err := checkStatus(500); err == nil || errors.Is(err, ErrBlocked) || errors.Is(err, ErrNotFound) {
 		t.Errorf("500: %v, want a plain error", err)
 	}
 }

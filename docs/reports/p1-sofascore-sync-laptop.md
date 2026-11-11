@@ -33,3 +33,13 @@ Tidak ada test Go baru (script shell + unit systemd). `bash -n` OK.
 - Bergantung laptop menyala dan jaringan yang lolos. Otomatis penuh butuh proxy residential.
 - Path absolut di `sofascore-sync.service` (`/home/danni/...`).
 - Bersih-bersih dari laporan sebelumnya (dump lama, `/opt/sofaproxy`) masih menunggu persetujuan.
+
+## Tambahan: kesehatan Flashscore di prod
+
+Dicek 2026-11-11 14:35 UTC, 6 jam log ingestor: `competition scraped` 1606, `team page synced` 237, tanpa `source blocked us`. `match_details` 7057 done. `matches.updated_at` terbaru sama dengan waktu cek. Flashscore tidak memblokir IP server.
+
+| ID | Masalah | Perbaikan | File |
+|---|---|---|---|
+| F1 | Halaman skuad 404 (`/team/nusantara/vgjR4Ao3/squad/`) tidak ditandai synced, jadi dicoba ulang dan dicatat ERROR tiap 5 menit (55 kali dalam 6 jam) | 404 menjadi `ErrNotFound`; `ScrapeSquad` mengubahnya ke `ErrNoSquad` sehingga tim ditandai synced dan baru dicoba lagi besok | `internal/provider/flashscore/scraper.go` |
+
+Test: `TestCheckStatus` menambah assert 404 menjadi `ErrNotFound` (dan 500 bukan). `go vet`, `go test ./internal/provider/flashscore/ ./internal/ingest/`: ok. Belum ter-deploy: ikut rilis berikutnya lewat Coolify.

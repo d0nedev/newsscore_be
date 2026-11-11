@@ -135,12 +135,17 @@ func fetchPage(path string) (string, error) {
 // ErrBlocked means Flashscore refused us (403 or 429): back off, do not retry at once.
 var ErrBlocked = errors.New("blocked by flashscore")
 
+// ErrNotFound means the page does not exist (404).
+var ErrNotFound = errors.New("not found on flashscore")
+
 func checkStatus(code int) error {
 	switch code {
 	case http.StatusOK:
 		return nil
 	case http.StatusForbidden, http.StatusTooManyRequests:
 		return fmt.Errorf("%w: status %d", ErrBlocked, code)
+	case http.StatusNotFound:
+		return fmt.Errorf("%w: status %d", ErrNotFound, code)
 	}
 	return fmt.Errorf("unexpected status %d", code)
 }
@@ -385,14 +390,17 @@ var (
 	squadRoles   = map[string]string{"Goalkeepers": "GK", "Defenders": "DF", "Midfielders": "MF", "Forwards": "FW"}
 )
 
-// ErrNoSquad means the squad page lists no players: lower-league clubs often have
-// none, so it is not a failure to retry at once.
+// ErrNoSquad means the squad page lists no players, or has no squad page at all (404):
+// lower-league clubs often have none, so it is not a failure to retry at once.
 var ErrNoSquad = errors.New("no players on squad page")
 
 // ScrapeSquad reads a team's squad page, e.g. path "/team/persik-kediri/MDFOmQ7H/squad/",
 // and its heading's 100x100 logo ("" if none). The logo comes back even with ErrNoSquad.
 func ScrapeSquad(path string) ([]SquadPlayer, string, error) {
 	html, err := fetchPage(path)
+	if errors.Is(err, ErrNotFound) {
+		return nil, "", ErrNoSquad
+	}
 	if err != nil {
 		return nil, "", err
 	}
