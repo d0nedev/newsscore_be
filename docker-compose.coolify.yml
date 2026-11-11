@@ -1,4 +1,4 @@
-# Production stack for Coolify (build pack: Docker Compose, location /deploy/docker-compose.coolify.yml).
+# Production stack for Coolify (build pack: Docker Compose, location /docker-compose.coolify.yml).
 # Coolify's Traefik does HTTPS; domain is set on the "app" service in Coolify (port 8080).
 # Bind mounts are avoided: Coolify does not mount the git checkout, so migrations and
 # collector config are baked into small images instead.
@@ -15,7 +15,7 @@ x-logging: &logging
 services:
   app:
     build:
-      context: ..
+      context: .
       args:
         VERSION: ${SOURCE_COMMIT:-dev}
     restart: unless-stopped
@@ -61,7 +61,7 @@ services:
   # Exactly one replica: a second ingestor scrapes twice and doubles the block risk.
   ingestor:
     build:
-      context: ..
+      context: .
       args:
         VERSION: ${SOURCE_COMMIT:-dev}
     entrypoint: ["/ingestor"]
@@ -84,7 +84,7 @@ services:
 
   migrate:
     build:
-      context: ..
+      context: .
       dockerfile_inline: |
         FROM migrate/migrate:v4.20.1
         COPY db/migrations /migrations
@@ -134,7 +134,7 @@ services:
 
   otel-collector:
     build:
-      context: ..
+      context: .
       dockerfile_inline: |
         FROM otel/opentelemetry-collector:0.160.0
         COPY <<EOF /etc/otelcol/config.yaml
