@@ -144,7 +144,7 @@ printf '%s\n' 'password-kuat' | docker run --rm -i --network newsscore-prod_defa
   -v "$PWD":/src -w /src \
   -e APP_ENV=production -e DB_HOST=postgres -e DB_SSL_MODE=require \
   -e DB_USER="$POSTGRES_USER" -e DB_PASSWORD="$POSTGRES_PASSWORD" -e DB_NAME="$POSTGRES_DB" \
-  golang:1.27.1 go run ./cmd/useradd -email admin@example.com -name Admin -admin
+  golang:1.27.4 go run ./cmd/useradd -email admin@example.com -name Admin -admin
 ```
 
 ## 7. Backup harian
