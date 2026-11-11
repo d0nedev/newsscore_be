@@ -9,8 +9,8 @@ Kebutuhan: Go 1.27+ (memakai package `uuid` dari stdlib), Docker, [sqlc](https:/
 ```
 cmd/server            entrypoint: HTTP server, graceful shutdown + readiness drain
 internal/app          composition root: config, telemetry, DB pool, router (app.go); wiring domain (modules.go)
-internal/ingest       ingestor: scrape Flashscore -> upsert PostgreSQL
-internal/provider     anti-corruption layer penyedia data (flashscore)
+internal/ingest       ingestor: scrape Flashscore + SofaScore -> upsert PostgreSQL
+internal/provider     anti-corruption layer penyedia data (flashscore, sofascore)
 internal/platform     utilitas sistem (bukan business logic):
   config              konfigurasi dari env / .env, validasi per environment
   database            pool Postgres + kode hasil generate sqlc
@@ -77,6 +77,8 @@ make run
 go run ./cmd/ingestor   # scrape Flashscore tiap INGEST_INTERVAL; jalankan satu instans saja
 ```
 
+Cara kerja ingestor, antrean job, dan penanganan blokir: [`docs/ingestor.md`](docs/ingestor.md).
+
 ## Konfigurasi
 
 Lihat [`.env.example`](.env.example). Aturan validasi penting:
@@ -115,6 +117,6 @@ CI (`.github/workflows/ci.yml`) menjalankan lint, govulncheck, `sqlc diff`, lint
 
 ## Operasional
 
-Deploy production ke VPS (Caddy + Postgres + OTel Collector, observability ke Grafana Cloud): folder [`deploy/`](deploy/), langkah lengkap di [`docs/runbook.md`](docs/runbook.md#deploy-vps-deploy).
+Deploy production ke VPS (Caddy + Postgres + OTel Collector, observability ke Grafana Cloud): folder [`deploy/`](deploy/), langkah lewat SSH di [`docs/deployment.md`](docs/deployment.md), observability dan alert di [`docs/runbook.md`](docs/runbook.md#deploy-vps-deploy).
 
 SLO, arti setiap alert, dan langkah penanganannya ada di [`docs/runbook.md`](docs/runbook.md). Alert rules: [`prometheus-alerts.yml`](prometheus-alerts.yml), dimuat oleh Prometheus di compose (http://localhost:9090/alerts).
