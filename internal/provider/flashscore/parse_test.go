@@ -1,7 +1,9 @@
 package flashscore
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -53,12 +55,6 @@ const (
 		"III÷SrGtdup4¬IA÷2¬IB÷21'¬IE÷3¬IF÷Haye T.¬IK÷Goal¬IM÷Y7DW0nHu¬IE÷8¬IF÷Tanamal I.¬IK÷Assistance¬IM÷Sjf4UlCG¬~" +
 		"III÷necyDrYH¬IA÷2¬IB÷39'¬IE÷1¬IF÷Haye T.¬IK÷Yellow Card¬IM÷Y7DW0nHu¬~" +
 		"III÷OjJnQy65¬IA÷2¬IB÷46'¬IE÷6¬IF÷Putra B.¬IK÷Substitution - Out¬IM÷4bIpHm56¬IE÷7¬IF÷Sekulic B.¬IK÷Substitution - In¬IM÷AB4TE5oN¬~"
-	lineupsFeed = "LA÷Formation¬LB÷Starting Lineups¬LGT÷1¬LC÷1¬~" +
-		"LD÷1-4-4-2¬LH÷0¬LP÷Y5cFTU5E¬LI÷Chica S.¬LPX÷0MnIUniA-EHOqXBOi.png¬LJ÷44¬LQ÷Spain¬LL÷7¬LPR÷7.3¬~" +
-		"LH÷2¬LP÷OApFFtdg¬LI÷Handika R.¬LR÷(G)¬LS÷Goalkeeper¬LJ÷1¬~" +
-		"LC÷2¬~LD÷1-4-2-3-1¬LH÷1¬LP÷Y7DW0nHu¬LI÷Haye T.¬LJ÷33¬~" +
-		"LB÷Substitutes¬LGT÷1¬LC÷1¬~LH÷11¬LP÷SMRZSrKm¬LI÷Abizal R.¬LJ÷1¬LQ÷Indonesia¬~" +
-		"LB÷Coaches¬LGT÷4¬LC÷1¬~LH÷22¬LP÷xrnNzeyc¬LI÷Lemos M.¬LJ÷¬~"
 )
 
 func TestParseIncidents(t *testing.T) {
@@ -79,23 +75,39 @@ func TestParseIncidents(t *testing.T) {
 	}
 }
 
-func TestParseLineups(t *testing.T) {
-	lineup := parseLineups(lineupsFeed)
-	if lineup.Formations != [2]string{"4-4-2", "4-2-3-1"} {
-		t.Errorf("formations = %q, want 4-4-2 and 4-2-3-1", lineup.Formations)
+func TestParseLineupGraphQL(t *testing.T) {
+	// Trimmed from a real dlie2 response (Crystal Palace v Liverpool): two starters
+	// and one substitute per side.
+	raw, err := os.ReadFile("testdata/lineup.json")
+	if err != nil {
+		t.Fatal(err)
 	}
+	var r lineupResponse
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatal(err)
+	}
+	lineup := parseLineupGraphQL(r)
+	if lineup.Formations != [2]string{"3-4-2-1", "4-2-3-1"} {
+		t.Errorf("formations = %q, want 3-4-2-1 and 4-2-3-1", lineup.Formations)
+	}
+	photo := "https://static.flashscore.com/res/image/data/"
 	got := lineup.Players
 	want := []Player{
-		{FlashscoreID: "Y5cFTU5E", Name: "Chica S.", Nationality: "Spain", ShirtNumber: 44, Team: 1, Starter: true,
-			PhotoURL: "https://static.flashscore.com/res/image/data/0MnIUniA-EHOqXBOi.png", FormationPlace: 7, Rating: "7.3"},
-		{FlashscoreID: "OApFFtdg", Name: "Handika R.", ShirtNumber: 1, Team: 1, Starter: true, Goalkeeper: true},
-		{FlashscoreID: "Y7DW0nHu", Name: "Haye T.", ShirtNumber: 33, Team: 2, Starter: true},
-		{FlashscoreID: "SMRZSrKm", Name: "Abizal R.", Nationality: "Indonesia", ShirtNumber: 1, Team: 1},
+		{FlashscoreID: "OpFOJojt", Name: "Henderson D.", Nationality: "England", ShirtNumber: 1, Team: 1, Starter: true, Goalkeeper: true,
+			FormationPlace: 1, Rating: "6.6", PhotoURL: photo + "f5Ze1Ekg-C4ducc4l.png"},
+		{FlashscoreID: "fVGFlDh2", Name: "Richards C.", Nationality: "USA", ShirtNumber: 26, Team: 1, Starter: true, FormationPlace: 2, Rating: "5.9"},
+		{FlashscoreID: "rVwIjuW2", Name: "Benitez W.", Nationality: "Argentina", ShirtNumber: 44, Team: 1, Goalkeeper: true},
+		{FlashscoreID: "UZrQ3bwP", Name: "Alisson", Nationality: "Brazil", ShirtNumber: 1, Team: 2, Starter: true, Goalkeeper: true, FormationPlace: 1, Rating: "8.7"},
+		{FlashscoreID: "M3sbJix9", Name: "Araujo R.", Nationality: "Uruguay", ShirtNumber: 33, Team: 2, Starter: true, FormationPlace: 2, Rating: "6.6"},
+		{FlashscoreID: "r7gln7MG", Name: "Endo W.", Nationality: "Japan", ShirtNumber: 3, Team: 2},
 	}
 	if len(got) != len(want) {
-		t.Fatalf("players = %d, want %d (coaches must be skipped): %+v", len(got), len(want), got)
+		t.Fatalf("players = %d, want %d: %+v", len(got), len(want), got)
 	}
 	for i := range want {
+		if want[i].PhotoURL == "" {
+			got[i].PhotoURL = "" // only the first player's photo is pinned
+		}
 		if got[i] != want[i] {
 			t.Errorf("player %d:\n got %+v\nwant %+v", i, got[i], want[i])
 		}

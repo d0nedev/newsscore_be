@@ -1,9 +1,12 @@
 package flashscore
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -124,13 +127,126 @@ func ScrapeMatchDetails(matchID string) ([]MatchEvent, []MatchStat, Lineup, erro
 	return events, stats, lineup, nil
 }
 
-// ScrapeLineup reads only the lineups feed: players and formations, one request.
+// ScrapeLineup reads both lineups from Flashscore's GraphQL (the df_li feed went
+// empty in October 2026): players and formations, one request.
 func ScrapeLineup(matchID string) (Lineup, error) {
-	body, err := fetchBody("df_li_1", matchID)
+	time.Sleep(time.Second)
+	res, err := client.Get(lineupURL + "?" + url.Values{"_hash": {"dlie2"}, "eventId": {matchID}, "projectId": {"2"}}.Encode())
 	if err != nil {
 		return Lineup{}, err
 	}
-	return parseLineups(body), nil
+	defer res.Body.Close()
+	if err := checkStatus(res.StatusCode); err != nil {
+		return Lineup{}, err
+	}
+	var body lineupResponse
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return Lineup{}, fmt.Errorf("decode lineup: %w", err)
+	}
+	return parseLineupGraphQL(body), nil
+}
+
+// lineupURL serves persisted query dlie2, the one the match page's Lineups tab sends.
+const lineupURL = "https://2.ds.lsapp.eu/pq_graphql"
+
+type lineupResponse struct {
+	Data struct {
+		FindEventByID struct {
+			EventParticipants []struct {
+				Type   struct{ Side string } `json:"type"`
+				Lineup struct {
+					Players []struct {
+						ID       string                   `json:"id"`
+						ListName string                   `json:"listName"`
+						Number   string                   `json:"number"`
+						TeamName string                   `json:"teamName"` // nationality
+						Rating   *struct{ Value string }  `json:"rating"`
+						Roles    []struct{ Title string } `json:"playerRoles"`
+						Images   []struct {
+							Path        string `json:"path"`
+							VariantType int    `json:"variantType"`
+						} `json:"images"`
+					} `json:"players"`
+					Formation *struct {
+						Name  string `json:"name"`
+						Lines []struct {
+							SortKey int `json:"sortKey"`
+							Rows    []struct {
+								SortKey   int      `json:"sortKey"`
+								PlayerIDs []string `json:"playerIds"`
+							} `json:"rows"`
+						} `json:"lines"`
+					} `json:"formation"`
+					Groups []struct {
+						GroupType string   `json:"groupType"`
+						PlayerIDs []string `json:"playerIds"`
+					} `json:"groups"`
+				} `json:"lineup"`
+			} `json:"eventParticipants"`
+		} `json:"findEventById"`
+	} `json:"data"`
+}
+
+// photoVariant is the 108x108 player photo, the size the old feed's LPX gave.
+const photoVariant = 83
+
+// parseLineupGraphQL keeps starters and substitutes (not coaches), in group order.
+// A starter's slot counts the formation's lines and rows in sort order, goalkeeper first.
+func parseLineupGraphQL(r lineupResponse) Lineup {
+	var out Lineup
+	for _, p := range r.Data.FindEventByID.EventParticipants {
+		side := 1
+		if p.Type.Side == "AWAY" {
+			side = 2
+		}
+		l := p.Lineup
+		slots := map[string]int{}
+		if l.Formation != nil {
+			out.Formations[side-1] = l.Formation.Name
+			lines := l.Formation.Lines
+			sort.SliceStable(lines, func(i, j int) bool { return lines[i].SortKey < lines[j].SortKey })
+			for _, line := range lines {
+				rows := line.Rows
+				sort.SliceStable(rows, func(i, j int) bool { return rows[i].SortKey < rows[j].SortKey })
+				for _, row := range rows {
+					for _, id := range row.PlayerIDs {
+						slots[id] = len(slots) + 1
+					}
+				}
+			}
+		}
+		for _, g := range l.Groups {
+			if g.GroupType != "STARTERS" && g.GroupType != "SUBSTITUTES" {
+				continue
+			}
+			starter := g.GroupType == "STARTERS"
+			for _, id := range g.PlayerIDs {
+				for _, pl := range l.Players {
+					if pl.ID != id {
+						continue
+					}
+					number, _ := strconv.Atoi(pl.Number)
+					player := Player{FlashscoreID: id, Name: pl.ListName, Nationality: pl.TeamName, ShirtNumber: number, Team: side, Starter: starter}
+					if starter {
+						player.FormationPlace = slots[id]
+					}
+					if pl.Rating != nil {
+						player.Rating = pl.Rating.Value
+					}
+					for _, role := range pl.Roles {
+						player.Goalkeeper = player.Goalkeeper || role.Title == "Goalkeeper"
+					}
+					for _, img := range pl.Images {
+						if img.VariantType == photoVariant {
+							player.PhotoURL = imageURL(img.Path)
+						}
+					}
+					out.Players = append(out.Players, player)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // ScrapeEvents reads the match incidents feed (goals, cards, substitutions).
@@ -208,47 +324,6 @@ func parseIncidents(body string) []MatchEvent {
 		events = append(events, e)
 	}
 	return events
-}
-
-// parseLineups reads df_li records: "LB" opens a section (Starting Lineups,
-// Substitutes, Coaches), "LC" switches team side, "LP" is a player, and "LD"
-// the side's formation with the goalkeeper first ("1-4-4-2").
-func parseLineups(body string) Lineup {
-	var out Lineup
-	section, side := "", 1
-	for _, m := range parseRecords(body) {
-		if v, ok := m["LB"]; ok {
-			section = v
-		}
-		if v, ok := m["LC"]; ok {
-			side = 1
-			if v == "2" {
-				side = 2
-			}
-		}
-		if v, ok := m["LD"]; ok {
-			out.Formations[side-1] = strings.TrimPrefix(v, "1-")
-		}
-		id, ok := m["LP"]
-		if !ok || (section != "Starting Lineups" && section != "Substitutes") {
-			continue
-		}
-		number, _ := strconv.Atoi(m["LJ"])
-		place, _ := strconv.Atoi(m["LL"])
-		out.Players = append(out.Players, Player{
-			FormationPlace: place,
-			Rating:         m["LPR"],
-			FlashscoreID:   id,
-			Name:           m["LI"],
-			Nationality:    m["LQ"],
-			ShirtNumber:    number,
-			Team:           side,
-			Starter:        section == "Starting Lineups",
-			Goalkeeper:     m["LS"] == "Goalkeeper",
-			PhotoURL:       imageURL(m["LPX"]), // 108x108; LPI and LPL are smaller cuts
-		})
-	}
-	return out
 }
 
 // LiveState is the small "dc_1" core feed: status, stage, and score of one match.

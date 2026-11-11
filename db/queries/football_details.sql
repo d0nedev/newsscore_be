@@ -77,9 +77,13 @@ UPDATE matches SET home_formation = $2, away_formation = $3 WHERE id = $1;
 
 -- name: ListMatchesToRereadLineups :many
 -- Matches whose lineups were stored before formations, slots, and ratings were
--- kept (a starter without a slot), newest first; for ingestor -backfill-lineups.
+-- kept (a starter without a slot), and finished Flashscore matches with details
+-- but no lineup (df_li went empty in October 2026); newest first, for ingestor -backfill-lineups.
 SELECT m.id, coalesce(m.flashscore_id, '')::text AS flashscore_id, coalesce(m.sofascore_id, 0)::int AS sofascore_id,
        m.home_team_id, m.away_team_id
 FROM matches m
 WHERE EXISTS (SELECT 1 FROM match_lineups l WHERE l.match_id = m.id AND l.starter AND l.formation_place IS NULL)
+   OR (m.flashscore_id IS NOT NULL AND m.status = 'finished'
+       AND EXISTS (SELECT 1 FROM match_statistics s WHERE s.match_id = m.id)
+       AND NOT EXISTS (SELECT 1 FROM match_lineups l WHERE l.match_id = m.id))
 ORDER BY m.match_time DESC;
