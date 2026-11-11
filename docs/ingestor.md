@@ -77,7 +77,9 @@ Laga SofaScore tidak ikut loop live; skornya diperbarui oleh sync SofaScore per 
 
 ## Mode sekali jalan
 
-**`ingestor -backfill-lineups`** membaca ulang lineup tiap laga yang disimpan sebelum formasi, slot, dan rating ikut disimpan (ada starter tanpa `formation_place`), terbaru dulu, satu request per laga. Laga SofaScore butuh `SOFASCORE_PROXY` bila API-nya minta captcha; kalau tetap diblokir, laga SofaScore dilewati dan laga Flashscore jalan terus. Blokir Flashscore menghentikan backfill.
+**`ingestor -backfill-lineups`** membaca ulang lineup tiap laga yang disimpan sebelum formasi, slot, dan rating ikut disimpan (ada starter tanpa `formation_place`), plus laga Flashscore selesai yang punya statistik tapi tanpa lineup, terbaru dulu, satu request per laga. Laga SofaScore butuh `SOFASCORE_PROXY` bila API-nya minta captcha; kalau tetap diblokir, laga SofaScore dilewati dan laga Flashscore jalan terus. Blokir Flashscore menghentikan backfill.
+
+Lineup Flashscore dibaca dari GraphQL `https://2.ds.lsapp.eu/pq_graphql?_hash=dlie2&eventId=<id>&projectId=2` (persisted query tab Lineups). Feed lama `df_li_1` kosong sejak Oktober 2026. Kalau laga baru punya statistik tapi tanpa lineup, cek query ini dulu: hash-nya ada di bundle `detail.*.js` halaman laga (`DETAIL_LINEUPS_QUERY`).
 
 **`seed-sofascore`** untuk isi awal: semua kompetisi SofaScore, semua skuad, dan detail semua laga selesai sekaligus, tanpa batas per run milik ingestor. Setelah itu ingestor yang menjaga datanya tetap baru. Dengan `-images` hanya mengunduh logo dan foto yang belum ada, tanpa batas 100 foto per run (`img.sofascore.com` tidak pakai captcha).
 
