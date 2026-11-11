@@ -1,0 +1,160 @@
+# Production stack for Coolify (build pack: Docker Compose, location /deploy/docker-compose.coolify.yml).
+# Coolify's Traefik does HTTPS; domain is set on the "app" service in Coolify (port 8080).
+# Bind mounts are avoided: Coolify does not mount the git checkout, so migrations and
+# collector config are baked into small images instead.
+# Required env (Coolify > Environment Variables): POSTGRES_PASSWORD (URL-safe, e.g. openssl rand -hex 32).
+# ponytail: collector drops all telemetry (nop exporter). To ship to Grafana Cloud, switch the
+# collector to deploy/otel-collector.yaml (contrib image + GRAFANA_CLOUD_* env).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  app:
+    build:
+      context: ..
+      args:
+        VERSION: ${SOURCE_COMMIT:-dev}
+    restart: unless-stopped
+    expose:
+      - "8080"
+    volumes:
+      - assets:/data/assets
+    environment: &app-env
+      ASSETS_DIR: /data/assets
+      APP_SERVICE_NAME: newsscore
+      APP_PORT: "8080"
+      APP_ENV: production
+      APP_SHUTDOWN_DRAIN_DELAY: 2s
+      # Coolify proxy network; the app trusts X-Forwarded-For only from here.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-newsscore}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?}
+      DB_NAME: ${POSTGRES_DB:-newsscore}
+      DB_SSL_MODE: require
+      DB_MAX_CONNS: "20"
+      DB_MIN_CONNS: "2"
+      DB_MAX_CONN_LIFETIME: 1h
+      DB_MAX_CONN_IDLE_TIME: 30m
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_TRACE_SAMPLE_RATE: ${OTEL_TRACE_SAMPLE_RATE:-0.1}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-600}
+      SESSION_TTL: ${SESSION_TTL:-720h}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      GOMEMLIMIT: 450MiB
+    mem_limit: 512m
+    stop_grace_period: 20s
+    logging: *logging
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
+
+  # Exactly one replica: a second ingestor scrapes twice and doubles the block risk.
+  ingestor:
+    build:
+      context: ..
+      args:
+        VERSION: ${SOURCE_COMMIT:-dev}
+    entrypoint: ["/ingestor"]
+    restart: unless-stopped
+    volumes:
+      - assets:/data/assets
+    environment:
+      <<: *app-env
+      INGEST_INTERVAL: ${INGEST_INTERVAL:-5m}
+      INGEST_DETAILS_PER_RUN: ${INGEST_DETAILS_PER_RUN:-20}
+      INGEST_LIVE_INTERVAL: ${INGEST_LIVE_INTERVAL:-20s}
+      FLASHSCORE_FSIGN: ${FLASHSCORE_FSIGN:-}
+      SOFASCORE_PROXY: ${SOFASCORE_PROXY:-}
+      DB_MAX_CONNS: "4"
+    mem_limit: 256m
+    logging: *logging
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: ..
+      dockerfile_inline: |
+        FROM migrate/migrate:v4.20.1
+        COPY db/migrations /migrations
+    command:
+      - -path=/migrations
+      - -database=postgres://${POSTGRES_USER:-newsscore}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-newsscore}?sslmode=require
+      - up
+    restart: "no"
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17.6
+    restart: unless-stopped
+    # Self-signed cert shipped in the Debian image: satisfies DB_SSL_MODE=require. Port never published.
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+      - -c
+      - ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - max_connections=50
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-newsscore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-newsscore}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256m
+    mem_limit: 3g
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  otel-collector:
+    build:
+      context: ..
+      dockerfile_inline: |
+        FROM otel/opentelemetry-collector:0.160.0
+        COPY <<EOF /etc/otelcol/config.yaml
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+        exporters:
+          nop:
+        service:
+          pipelines:
+            traces: {receivers: [otlp], exporters: [nop]}
+            metrics: {receivers: [otlp], exporters: [nop]}
+            logs: {receivers: [otlp], exporters: [nop]}
+        EOF
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *logging
+
+volumes:
+  pgdata:
+  assets: # team logos: the ingestor writes, the API serves /assets/
