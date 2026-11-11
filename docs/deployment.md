@@ -224,6 +224,8 @@ docker compose logs --since=2h ingestor | grep -i sofascore                  # t
 
 Proxy tidak punya autentikasi: jangan buka port 8787 ke internet. Kalau log proxy terus "no token after 60s", IP server ditandai keras oleh Cloudflare; isi data SofaScore dari lokal (start pertama pilihan B).
 
+> Dicoba 2026-11-11 di server prod (148.230.99.150): `www.sofascore.com` menjawab 403 JSON bahkan untuk halaman depan di browser asli, tanpa captcha. IP diblokir total, proxy tidak membantu. Service `sofaproxy` terpasang di `/opt/sofaproxy` tapi dimatikan. Jalan keluar: proxy di mesin dengan IP lain (residential) lalu tunnel ke server, atau seed dari lokal.
+
 ## Batasan
 
 - SofaScore tanpa proxy di atas: sync berhenti di 403 tiap jam. Tidak berbahaya, tapi skor liga SofaScore tidak diperbarui.
