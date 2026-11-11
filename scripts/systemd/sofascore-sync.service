@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync SofaScore into newsscore prod DB (scripts/sofascore-sync.sh)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/danni/Workspace/go/newsscore_be
+ExecStart=/home/danni/Workspace/go/newsscore_be/scripts/sofascore-sync.sh
+Environment=PATH=/home/danni/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/bin:/usr/local/bin:/usr/bin:/bin
+TimeoutStartSec=3h

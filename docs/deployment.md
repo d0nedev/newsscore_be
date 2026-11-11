@@ -226,7 +226,21 @@ Proxy tidak punya autentikasi: jangan buka port 8787 ke internet. Kalau log prox
 
 > Dicoba 2026-11-11 di server prod (148.230.99.150): `www.sofascore.com` menjawab 403 JSON bahkan untuk halaman depan di browser asli, tanpa captcha. IP diblokir total, proxy tidak membantu. Service `sofaproxy` terpasang di `/opt/sofaproxy` tapi dimatikan. Jalan keluar: proxy di mesin dengan IP lain (residential) lalu tunnel ke server, atau seed dari lokal.
 
-### Refresh data SofaScore dari lokal (Coolify)
+### Sync otomatis dari laptop (rekomendasi)
+
+`scripts/sofascore-sync.sh` membuka SSH tunnel ke Postgres prod, mengambil kredensial dari container, lalu menjalankan `cmd/seed-sofascore` di laptop dengan DB diarahkan ke prod. Upsert per `sofascore_id`, aman diulang, tidak menyentuh data Flashscore/`users`/`news`. Logo dan foto diunduh ingestor prod sendiri.
+
+```sh
+mkdir -p ~/.config/systemd/user
+ln -sf "$PWD"/scripts/systemd/sofascore-sync.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now sofascore-sync.timer
+loginctl enable-linger "$USER"                        # tetap jalan tanpa login
+journalctl --user -u sofascore-sync -f                # log
+```
+
+Jalan 5 menit setelah boot lalu 1 jam setelah run terakhir selesai (run penuh sekitar 25 menit). Syarat: laptop menyala dan berada di jaringan yang diterima SofaScore (Internet Positif dan sebagian jaringan kantor diblokir; VPN membantu). Gagal karena 403 tidak merusak apa pun, run berikutnya mencoba lagi. Path di `sofascore-sync.service` absolut: sesuaikan bila repo dipindah.
+
+### Refresh data SofaScore dari lokal (Coolify, manual)
 
 Data SofaScore di prod tidak update sendiri. Untuk menyegarkan: jalankan `go run ./cmd/seed-sofascore` di lokal (butuh `SOFASCORE_PROXY` lokal; dari ISP Indonesia `www.sofascore.com` diblokir Internet Positif, pakai VPN), lalu ganti DB prod dengan dump lokal. Ini **menimpa seluruh DB prod**, termasuk `users`, `sessions`, dan `news`: periksa dulu isinya.
 
